@@ -360,7 +360,7 @@ export class SearchManager {
         return { mobilePoints, desktopPoints }
     }
 
-private async createDesktopSession(account: Account, accountEmail: string): Promise<BrowserSession> {
+    private async createDesktopSession(account: Account, accountEmail: string): Promise<BrowserSession> {
         this.bot.logger.info('main', 'SEARCH-DESKTOP-LOGIN', 'Init desktop session')
         this.bot.logger.debug(
             'main',
@@ -373,8 +373,8 @@ private async createDesktopSession(account: Account, accountEmail: string): Prom
 
         this.bot.mainDesktopPage = await session.context.newPage()
 
-        // ==================== SUNTIKAN OPTIMASI HEMAT KUOTA ====================
-        this.bot.logger.info('main', 'SEARCH-DESKTOP-LOGIN', '🛡️ Activating Request Interceptor (Blocking images & media)...')
+        // ==================== SUNTIKAN OPTIMASI HEMAT KUOTA DESKTOP ====================
+        this.bot.logger.info('main', 'SEARCH-DESKTOP-LOGIN', '🛡️ Activating Request Interceptor Desktop (Blocking images & media)...')
         await this.bot.mainDesktopPage.route('**/*', (route) => {
             const resourceType = route.request().resourceType();
             if (
@@ -382,9 +382,9 @@ private async createDesktopSession(account: Account, accountEmail: string): Prom
                 resourceType === 'media' || 
                 resourceType === 'font'
             ) {
-                route.abort(); // Tembak mati request gambar/video biar hemat kuota 80%
+                route.abort().catch(() => {}); 
             } else {
-                route.continue(); // Izinkan text, css, dan js buat isi poin
+                route.continue().catch(() => {}); 
             }
         });
         // =======================================================================
@@ -438,6 +438,27 @@ private async createDesktopSession(account: Account, accountEmail: string): Prom
                     `Search start | target=${missingSearchPoints.mobilePoints}`
                 )
                 this.bot.logger.debug('main', 'SEARCH-MOBILE-SEARCH', 'activities.doSearch (mobile)')
+
+                // ==================== SUNTIKAN OPTIMASI HEMAT KUOTA MOBILE ====================
+                this.bot.logger.info('main', 'SEARCH-MOBILE-SEARCH', '🛡️ Activating Request Interceptor Mobile (Blocking images & media)...')
+                
+                // Cek dulu biar nggak double route kalau sebelumnya udah pernah diset
+                const interceptorAdded = this.bot.mainMobilePage.url() === 'about:blank' || !this.bot.mainMobilePage.isClosed();
+                if (interceptorAdded) {
+                    await this.bot.mainMobilePage.route('**/*', (route) => {
+                        const resourceType = route.request().resourceType();
+                        if (
+                            resourceType === 'image' || 
+                            resourceType === 'media' || 
+                            resourceType === 'font'
+                        ) {
+                            route.abort().catch(() => {});
+                        } else {
+                            route.continue().catch(() => {});
+                        }
+                    });
+                }
+                // ==============================================================================
 
                 const pointsEarned = await this.bot.activities.doSearch(data, this.bot.mainMobilePage, true)
 

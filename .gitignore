@@ -1,4 +1,4 @@
-# Mengabaikan semua dependencies (biar gak berceceran)
+# Dependencies
 node_modules/
 uri-js/
 v8-compile-cache-lib/
@@ -11,13 +11,27 @@ yn/
 yocto-queue/
 zod/
 
-# Mengabaikan file kredensial asli di folder src
+# Build output
+dist/
+
+# Browser binaries & sessions
+browser/
+/browser/
+src/browser/sessions/
+src/sessions/
+
+# Sensitive credentials & personal configs (CRITICAL ANTI-LEAK)
+accounts.json
+account.json
+account.dev.json
+accounts.dev.json
+config.json
 src/account.json
+src/accounts.json
 src/accounts.dev.json
 src/config.json
 
-# Mengabaikan semua sesi cookies (Paling Penting!)
-src/sessions/
-
-# Mengabaikan file log sampah
+# Logs & temp files
 *.log
+*.sqlite
+node_sqlite.js

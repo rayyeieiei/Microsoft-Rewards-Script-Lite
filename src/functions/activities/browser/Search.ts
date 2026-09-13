@@ -34,6 +34,17 @@ export class Search extends Workers {
                 `Search points remaining | Edge=${missingPoints.edgePoints} | Desktop=${missingPoints.desktopPoints} | Mobile=${missingPoints.mobilePoints}`
             )
 
+            // ================= SUNTIKAN LOGGER PARAMETER LITE MODE =================
+            // Menentukan batas acak pencarian untuk akun magang (antara 3 s.d 7 kali saja)
+            const randomSearchLimit = Math.floor(Math.random() * (7 - 3 + 1)) + 3
+            let currentSearchIteration = 0
+            this.bot.logger.info(
+                isMobile, 
+                'SEARCH-BING-LITE', 
+                `🛑 [LITE MODE ACTIVE] This account is capped to a random limit of ${randomSearchLimit} searches today to safe-keep Trust Score.`
+            )
+            // =======================================================================
+
             const queryCore = new QueryCore(this.bot)
             const locale = (this.bot.userData.geoLocale ?? 'US').toUpperCase()
             const langCode = (this.bot.userData.langCode ?? 'en').toLowerCase()
@@ -68,9 +79,21 @@ export class Search extends Workers {
             const stagnantLoopMax = 10
 
             for (let i = 0; i < queries.length; i++) {
+                // SUNTIKAN LIMITER UTAMA
+                if (currentSearchIteration >= randomSearchLimit) {
+                    this.bot.logger.info(
+                        isMobile, 
+                        'SEARCH-BING-LITE', 
+                        `✋ Reached Lite Mode safe-limit (${currentSearchIteration}/${randomSearchLimit} searches done). Braking loop early!`
+                    )
+                    break
+                }
+
                 const query = queries[i] as string
 
                 searchCounters = await this.bingSearch(page, query, isMobile)
+                currentSearchIteration++ // Naikin counter setiap berhasil ngetik keyword
+
                 const newMissingPoints = this.bot.browser.func.missingSearchPoints(searchCounters, isMobile)
                 const newMissingPointsTotal = newMissingPoints.totalPoints
 
@@ -96,7 +119,7 @@ export class Search extends Workers {
                     this.bot.logger.info(
                         isMobile,
                         'SEARCH-BING',
-                        `gainedPoints=${gainedPoints} points | query="${query}" | remaining=${newMissingPointsTotal}`,
+                        `gainedPoints=${gainedPoints} points | query="${query}" | remaining=${newMissingPointsTotal} | currentBatchCount=${currentSearchIteration}/${randomSearchLimit}`,
                         'green'
                     )
                 }
@@ -147,7 +170,8 @@ export class Search extends Workers {
                 }
             }
 
-            if (missingPointsTotal > 0) {
+            // SUNTIKAN LIMITER KEDUA (Mencegah loop ekstra jalan kalau jatah amannya udah abis)
+            if (missingPointsTotal > 0 && currentSearchIteration < randomSearchLimit) {
                 this.bot.logger.info(
                     isMobile,
                     'SEARCH-BING',
@@ -157,7 +181,7 @@ export class Search extends Workers {
                 let stagnantLoop = 0
                 const stagnantLoopMax = 5
 
-                while (missingPointsTotal > 0) {
+                while (missingPointsTotal > 0 && currentSearchIteration < randomSearchLimit) {
                     const extra = await queryCore.queryManager({
                         shuffle: true,
                         related: true,
@@ -177,6 +201,10 @@ export class Search extends Workers {
                     )
 
                     for (const query of queries) {
+                        if (currentSearchIteration >= randomSearchLimit) {
+                            break
+                        }
+
                         this.bot.logger.info(
                             isMobile,
                             'SEARCH-BING-EXTRA',
@@ -184,6 +212,8 @@ export class Search extends Workers {
                         )
 
                         searchCounters = await this.bingSearch(page, query, isMobile)
+                        currentSearchIteration++
+
                         const newMissingPoints = this.bot.browser.func.missingSearchPoints(searchCounters, isMobile)
                         const newMissingPointsTotal = newMissingPoints.totalPoints
 
@@ -209,9 +239,9 @@ export class Search extends Workers {
                             this.bot.logger.info(
                                 isMobile,
                                 'SEARCH-BING-EXTRA',
-                                `gainedPoints=${gainedPoints} points | query="${query}" | remaining=${newMissingPointsTotal}`,
+                                `gainedPoints=${gainedPoints} points | query="${query}" | remaining=${newMissingPointsTotal} | currentBatchCount=${currentSearchIteration}/${randomSearchLimit}`,
                                 'green'
-                            )
+                    )
                         }
 
                         missingPointsTotal = newMissingPointsTotal
@@ -241,6 +271,12 @@ export class Search extends Workers {
                         }
                     }
                 }
+            } else if (currentSearchIteration >= randomSearchLimit && missingPointsTotal > 0) {
+                this.bot.logger.info(
+                    isMobile,
+                    'SEARCH-BING-LITE',
+                    `⚠️ [LITE CONTROL] Skipping extra query pools regeneration. Safe limit reached (${currentSearchIteration}/${randomSearchLimit}). Leaving ${missingPointsTotal} missing points intentionally for safety.`
+                )
             }
 
             const finalBalance = Number(this.bot.userData.currentPoints ?? startBalance)
@@ -248,7 +284,7 @@ export class Search extends Workers {
             this.bot.logger.info(
                 isMobile,
                 'SEARCH-BING',
-                `Completed Bing searches | startBalance=${startBalance} | newBalance=${finalBalance}`
+                `Completed Bing searches | startBalance=${startBalance} | newBalance=${finalBalance} | Total actual searches done=${currentSearchIteration}`
             )
 
             return totalGainedPoints

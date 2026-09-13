@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import cluster, { Worker } from 'cluster'
 import type { BrowserContext, Cookie, Page } from 'patchright'
-import readline from 'node:readline'
-import axios from 'axios' // FIX RPL: Gunakan axios mentah untuk cek IP publik network utama
+import readline from 'node:readline' 
+import axios from 'axios' 
 import pkg from '../package.json'
 
 import type { BrowserFingerprintWithHeaders } from 'fingerprint-generator'
@@ -17,7 +17,6 @@ import { loadAccounts, loadConfig } from './util/Load'
 import { checkNodeVersion } from './util/Validator'
 
 import { Login } from './browser/auth/Login'
-import { Workers } from './functions/Workers'
 import Activities from './functions/Activities'
 import { SearchManager } from './functions/SearchManager'
 
@@ -26,7 +25,6 @@ import AxiosClient from './util/Axios'
 import { sendDiscord, flushDiscordQueue } from './logging/Discord'
 import { sendNtfy, flushNtfyQueue } from './logging/Ntfy'
 import type { DashboardData } from './interface/DashboardData'
-import type { AppDashboardData } from './interface/AppDashBoardData'
 
 interface ExecutionContext {
     isMobile: boolean
@@ -90,13 +88,10 @@ export class MicrosoftRewardsBot {
     public cookies: { mobile: Cookie[]; desktop: Cookie[] }
     public fingerprint!: BrowserFingerprintWithHeaders
 
-    private pointsCanCollect = 0
-
     private activeWorkers: number
     private exitedWorkers: number[]
     private browserFactory: Browser = new Browser(this)
     private accounts: Account[] = []
-    private workers: Workers
     private login = new Login(this)
     private searchManager: SearchManager
 
@@ -114,7 +109,6 @@ export class MicrosoftRewardsBot {
         this.logger = new Logger(this)
         this.cookies = { mobile: [], desktop: [] }
         this.utils = new Utils()
-        this.workers = new Workers(this)
         this.searchManager = new SearchManager(this)
         this.browser = {
             func: new BrowserFunc(this),
@@ -129,7 +123,6 @@ export class MicrosoftRewardsBot {
         return getCurrentContext().isMobile
     }
 
-    // FIX RPL: Helper function buat nembak ipify tanpa lewat proxy biar akurat dapet IP internet asli komputer
     private async getCurrentIP(): Promise<string> {
         return await axios.get('https://api.ipify.org', { timeout: 5000 })
             .then(res => res.data.trim())
@@ -147,7 +140,7 @@ export class MicrosoftRewardsBot {
         this.logger.info(
             'main',
             'RUN-START',
-            `Starting Microsoft Rewards Script | v${pkg.version} | Accounts: ${totalAccounts} | Clusters: ${this.config.clusters}`
+            `Starting LITE VERSION Script | v${pkg.version} | Accounts: ${totalAccounts} | Clusters: ${this.config.clusters}`
         )
 
         if (this.config.clusters > 1) {
@@ -263,7 +256,6 @@ export class MicrosoftRewardsBot {
         const accountStats: AccountStats[] = []
         let processedCount = 0
 
-        // Ambil data IP pertama pas start script
         let currentIpAddress = await this.getCurrentIP()
         this.logger.info('main', 'NETWORK', `Current Active IP: [ ${currentIpAddress} ]`)
 
@@ -274,13 +266,23 @@ export class MicrosoftRewardsBot {
 
             try {
                 // ==========================================
-                // 🔥 SUNTIKAN KODE ANTI-DETECTION (RANDOM SLEEP) 🔥
-                // Bikin jeda acak 10 sampai 60 detik sebelum buka browser
-                const randomStartDelay = Math.floor(Math.random() * (60000 - 10000 + 1)) + 10000;
-                this.logger.info('main', 'STEALTH', `Menunggu ${(randomStartDelay / 1000).toFixed(0)} detik sebelum buka browser biar keliatan natural...`, 'cyan')
+                // 🔥 SISTEM GACHA LITE (MODE OFFICE VS RUMAH) 🔥
+                // ==========================================
+                const isOfficeMode = Math.random() > 0.5;
+                const modeName = isOfficeMode ? '🏢 OFFICE (Delay Singkat)' : '🏠 RUMAH (Delay Gabut Parah)';
+                this.logger.info('main', 'STEALTH', `🎲 [GACHA MODE LITE] Akun ${accountEmail} dapet mode: ${modeName}`, 'magenta');
+
+                let randomStartDelay;
+                if (isOfficeMode) {
+                    randomStartDelay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000; // 10 sampai 20 detik
+                } else {
+                    randomStartDelay = Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000; // 30 sampai 60 detik
+                }
+
+                this.logger.info('main', 'STEALTH', `Menunggu ${(randomStartDelay / 1000).toFixed(0)} detik sebelum buka browser...`, 'cyan')
                 await this.utils.wait(randomStartDelay);
 
-                this.logger.info('main', 'ACCOUNT-START', `Starting account: ${accountEmail} | geoLocale: ${account.geoLocale}`)
+                this.logger.info('main', 'ACCOUNT-START', `Starting LITE account: ${accountEmail} | geoLocale: ${account.geoLocale}`)
                 this.axios = new AxiosClient(account.proxy)
 
                 const result = await this.Main(account).catch(error => {
@@ -295,65 +297,52 @@ export class MicrosoftRewardsBot {
                     const accountInitialPoints = result.initialPoints ?? 0
                     const accountFinalPoints = accountInitialPoints + collectedPoints
 
-                    accountStats.push({
-                        email: accountEmail,
-                        initialPoints: accountInitialPoints,
-                        finalPoints: accountFinalPoints,
-                        collectedPoints: collectedPoints,
-                        duration: parseFloat(durationSeconds),
-                        success: true
-                    })
-
+                    accountStats.push({ email: accountEmail, initialPoints: accountInitialPoints, finalPoints: accountFinalPoints, collectedPoints: collectedPoints, duration: parseFloat(durationSeconds), success: true })
                     this.logger.info('main', 'ACCOUNT-END', `Completed account: ${accountEmail} | Total: +${collectedPoints} | Old: ${accountInitialPoints} → New: ${accountFinalPoints} | Duration: ${durationSeconds}s`, 'green')
                 } else {
-                    accountStats.push({
-                        email: accountEmail, initialPoints: 0, finalPoints: 0, collectedPoints: 0,
-                        duration: parseFloat(durationSeconds), success: false, error: 'Flow failed'
-                    })
+                    accountStats.push({ email: accountEmail, initialPoints: 0, finalPoints: 0, collectedPoints: 0, duration: parseFloat(durationSeconds), success: false, error: 'Flow failed' })
                 }
             } catch (error) {
                 const durationSeconds = ((Date.now() - accountStartTime) / 1000).toFixed(1)
                 this.logger.error('main', 'ACCOUNT-ERROR', `${accountEmail}: ${error instanceof Error ? error.message : String(error)}`)
-                accountStats.push({
-                    email: accountEmail, initialPoints: 0, finalPoints: 0, collectedPoints: 0,
-                    duration: parseFloat(durationSeconds), success: false, error: error instanceof Error ? error.message : String(error)
-                })
+                accountStats.push({ email: accountEmail, initialPoints: 0, finalPoints: 0, collectedPoints: 0, duration: parseFloat(durationSeconds), success: false, error: error instanceof Error ? error.message : String(error) })
             }
 
             processedCount++
+
+            // ==========================================
+            // 🔥 FITUR ROTASI IP MANUAL (CCProxy/Tethering) 🔥
+            // ==========================================
             if (processedCount % 2 === 0 && processedCount < accounts.length) {
                 let ipChanged = false
                 const oldIp = currentIpAddress
 
                 while (!ipChanged) {
                     this.logger.warn('main', 'IP-INTERCEPTOR', '=======================================================', 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', `🔥 BATCH [${processedCount / 2}] SELESAI! SAATNYA ROTASI IP HOTSPOT! 🔥`, 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', `Current IP registered: [ ${oldIp} ]`, 'yellow')
+                    this.logger.warn('main', 'IP-INTERCEPTOR', `🔥 BATCH [${processedCount / 2}] LITE SELESAI! WAKTUNYA ROTASI IP HOTSPOT! 🔥`, 'yellow')
+                    this.logger.warn('main', 'IP-INTERCEPTOR', `IP PC saat ini: [ ${oldIp} ]`, 'yellow')
                     this.logger.warn('main', 'IP-INTERCEPTOR', '1. Nyalakan "Mode Pesawat" di HP lu selama 5 detik.', 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', '2. Matikan "Mode Pesawat" & tunggu hotspot PC konek kembali.', 'yellow')
+                    this.logger.warn('main', 'IP-INTERCEPTOR', '2. Matikan "Mode Pesawat" & tunggu laptop konek Wi-Fi lagi.', 'yellow')
                     this.logger.warn('main', 'IP-INTERCEPTOR', '=======================================================', 'yellow')
                     
-                    // ==========================================
-                    // 🔥 INJEKSI ALARM WINDOWS (Biar Kedengeran Pas Nonton TV) 🔥
                     try {
                         require('child_process').exec(`powershell -c (New-Object Media.SoundPlayer "C:\\Windows\\Media\\notify.wav").PlaySync();`);
                     } catch (e) {}
-                    // ==========================================
 
                     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
                     await new Promise<void>(resolve => rl.question('👉 Jika PC sudah dapet internet baru, pencet [ENTER] buat verifikasi...', () => resolve()))
                     rl.close()
 
-                    this.logger.info('main', 'IP-INTERCEPTOR', 'Checking network configuration telemetry...')
+                    this.logger.info('main', 'IP-INTERCEPTOR', 'Mengecek IP baru ke server...')
                     const checkNewIp = await this.getCurrentIP()
 
                     if (checkNewIp !== oldIp && checkNewIp !== 'UNKNOWN_IP') {
                         currentIpAddress = checkNewIp
                         ipChanged = true
-                        this.logger.info('main', 'IP-INTERCEPTOR', `🚀 IP Baru Terdeteksi: [ ${currentIpAddress} ]! Meluncur ke batch berikutnya...`, 'green')
+                        this.logger.info('main', 'IP-INTERCEPTOR', `🚀 IP Baru Terdeteksi: [ ${currentIpAddress} ]! Lanjut manasin akun...`, 'green')
                         await this.utils.wait(3000)
                     } else {
-                        this.logger.error('main', 'IP-INTERCEPTOR', `❌ VERIFIKASI GAGAL! IP PC lu masih [ ${checkNewIp} ]. Tolong nyalakan mode pesawat HP dulu biar ganti IP!`, 'red')
+                        this.logger.error('main', 'IP-INTERCEPTOR', `❌ GAGAL! IP lu masih [ ${checkNewIp} ]. Ulangi mode pesawatnya!`, 'red')
                         await this.utils.wait(3000)
                     }
                 }
@@ -366,7 +355,7 @@ export class MicrosoftRewardsBot {
             const totalFinal = accountStats.reduce((sum, s) => sum + s.finalPoints, 0)
             const totalDuration = ((Date.now() - runStartTime) / 1000 / 60).toFixed(1)
 
-            this.logger.info('main', 'RUN-END', `Completed all accounts | Accounts processed: ${accountStats.length} | Total points collected: +${totalCollected} | Old total: ${totalInitial} → New total: ${totalFinal} | Total runtime: ${totalDuration}min`, 'green')
+            this.logger.info('main', 'RUN-END', `Completed all LITE accounts | Processed: ${accountStats.length} | Total points: +${totalCollected} | Old total: ${totalInitial} → New total: ${totalFinal} | Runtime: ${totalDuration}min`, 'green')
             await flushAllWebhooks()
             process.exit(0)
         }
@@ -376,7 +365,7 @@ export class MicrosoftRewardsBot {
 
     async Main(account: Account): Promise<{ initialPoints: number; collectedPoints: number }> {
         const accountEmail = account.email
-        this.logger.info('main', 'FLOW', `Starting session for ${accountEmail}`)
+        this.logger.info('main', 'FLOW', `Starting LITE session for ${accountEmail}`)
 
         let mobileSession: BrowserSession | null = null
         let mobileContextClosed = false
@@ -387,51 +376,24 @@ export class MicrosoftRewardsBot {
                 const initialContext: BrowserContext = mobileSession.context
                 this.mainMobilePage = await initialContext.newPage()
 
-                this.logger.info('main', 'BROWSER', `Mobile Browser started | ${accountEmail}`)
-
                 await this.login.login(this.mainMobilePage, account)
 
                 try {
                     this.accessToken = await this.login.getAppAccessToken(this.mainMobilePage, accountEmail)
-                } catch (error) {
-                    this.logger.error('main', 'FLOW', `Failed to get mobile access token: ${error instanceof Error ? error.message : String(error)}`)
-                }
+                } catch (error) {}
 
                 this.cookies.mobile = await initialContext.cookies()
                 this.fingerprint = mobileSession.fingerprint
 
                 const data: DashboardData = await this.browser.func.getDashboardData()
-                const appData: AppDashboardData = await this.browser.func.getAppDashboardData()
                 
                 this.userData.geoLocale = account.geoLocale === 'auto' ? data.userProfile.attributes.country : account.geoLocale.toLowerCase()
-                
                 this.userData.initialPoints = data.userStatus.availablePoints
                 this.userData.currentPoints = data.userStatus.availablePoints
                 const initialPoints = this.userData.initialPoints ?? 0
 
-                const browserEarnable = await this.browser.func.getBrowserEarnablePoints()
-                const appEarnable = await this.browser.func.getAppEarnablePoints()
-
-                this.pointsCanCollect = browserEarnable.mobileSearchPoints + (appEarnable?.totalEarnablePoints ?? 0)
-
-                this.logger.info('main', 'POINTS', `Earnable today | Mobile: ${this.pointsCanCollect} | Browser: ${browserEarnable.mobileSearchPoints} | App: ${appEarnable?.totalEarnablePoints ?? 0} | ${accountEmail} | locale: ${this.userData.geoLocale}`)
-
-                if (this.config.workers.doAppPromotions && appData) {
-                    await this.workers.doAppPromotions(appData)
-                }
-
-                if (this.config.workers.doDailySet && data && this.mainMobilePage) {
-                    await this.workers.doDailySet(data, this.mainMobilePage)
-                }
-
-                if (this.config.workers.doSpecialPromotions && data && this.mainMobilePage) {
-                    await this.workers.doSpecialPromotions(data, this.mainMobilePage)
-                }
-
-                if (this.config.workers.doMorePromotions && data && this.mainMobilePage) {
-                    await this.workers.doMorePromotions(data, this.mainMobilePage)
-                }
-
+                this.logger.info('main', 'FLOW', `LITE MODE: Mematikan tugas Promosi, PunchCards, dan Task berat...`, 'cyan')
+                
                 if (this.config.workers.doDailyCheckIn) {
                     await this.activities.doDailyCheckIn()
                 }
@@ -440,15 +402,10 @@ export class MicrosoftRewardsBot {
                     await this.activities.doReadToEarn()
                 }
 
-                if (this.config.workers.doPunchCards && data && this.mainMobilePage) {
-                    await this.workers.doPunchCards(data, this.mainMobilePage)
-                }
-
                 const searchPoints = await this.browser.func.getSearchPoints()
                 const missingSearchPoints = this.browser.func.missingSearchPoints(searchPoints, true)
 
                 this.cookies.mobile = await initialContext.cookies()
-
                 const { mobilePoints, desktopPoints } = await this.searchManager.doSearches(data, missingSearchPoints, mobileSession, account, accountEmail)
 
                 mobileContextClosed = true
@@ -456,8 +413,6 @@ export class MicrosoftRewardsBot {
 
                 const finalPoints = await this.browser.func.getCurrentPoints()
                 const collectedPoints = finalPoints - initialPoints
-
-                this.logger.info('main', 'FLOW', `Collected: +${collectedPoints} | Mobile: +${mobilePoints} | Desktop: +${desktopPoints} | ${accountEmail}`)
 
                 return { initialPoints, collectedPoints: collectedPoints || 0 }
             })
@@ -481,12 +436,12 @@ async function main(): Promise<void> {
 
     process.on('beforeExit', () => { void flushAllWebhooks() })
     process.on('SIGINT', async () => {
-        rewardsBot.logger.warn('main', 'PROCESS', 'SIGINT received, flushing and exiting...')
+        rewardsBot.logger.warn('main', 'PROCESS', 'Sinyal Ctrl+C diterima, mematikan bot...')
         await flushAllWebhooks()
         process.exit(130)
     })
     process.on('SIGTERM', async () => {
-        rewardsBot.logger.warn('main', 'PROCESS', 'SIGTERM received, flushing and exiting...')
+        rewardsBot.logger.warn('main', 'PROCESS', 'Sinyal SIGTERM diterima, mematikan bot...')
         await flushAllWebhooks()
         process.exit(143)
     })
