@@ -1,4 +1,15 @@
-export type NumberOrString = number | string;
+export type NumberOrString = number | string
+
+export interface LiteRuntimeConfig {
+    contractVersion: 1
+    requestTimeoutMs: number
+    accountBudgetMs: number
+    maxReadRetries: number
+    handoffDirectory: string
+    allowedApiOrigins: string[]
+    observerOnly: true
+}
+
 export interface Config {
     baseURL: string
     sessionPath: string
@@ -14,9 +25,9 @@ export interface Config {
     consoleLogFilter: LogFilter
     webhook: ConfigWebhook
     loginRateLimit?: {
-        delay: NumberOrString;
-        maxAttempts: number;
-    };
+        delay: NumberOrString
+        maxAttempts: number
+    }
 }
 
 export type QueryEngine = 'google' | 'wikipedia' | 'reddit' | 'local'

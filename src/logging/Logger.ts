@@ -6,6 +6,8 @@ import type { MicrosoftRewardsBot } from '../index'
 import { errorDiagnostic } from '../util/ErrorDiagnostic'
 import type { LogFilter } from '../interface/Config'
 
+import { sanitizeLogMessage, redactAccountKey } from '../util/Redaction'
+
 export type Platform = boolean | 'main'
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug'
 export type ColorKey = keyof typeof chalk
@@ -63,6 +65,28 @@ export class Logger {
         return this.baseLog('debug', isMobile, title, message, color)
     }
 
+    // Structured diagnostics for Lite runtime
+    scopeStart(account: string, budgetMs: number) {
+        const redacted = redactAccountKey(account)
+        this.info('main', 'LITE-SCOPE', `start account=${redacted} budgetMs=${budgetMs}`)
+    }
+
+    httpOperation(operation: string, status: string | number, durationMs: number) {
+        this.info('main', 'LITE-HTTP', `operation=${operation} status=${status} durationMs=${durationMs}`)
+    }
+
+    handoff(taskId: string, reason: string) {
+        this.info('main', 'LITE-HANDOFF', `taskId=${taskId} reason=${reason}`)
+    }
+
+    scopeEnd(outcome: string, durationMs: number) {
+        this.info('main', 'LITE-SCOPE', `end outcome=${outcome} durationMs=${durationMs}`)
+    }
+
+    disposeSummary(abortedCount: number, agentDestroyed: boolean) {
+        this.info('main', 'LITE-DISPOSE', `aborted=${abortedCount} agentDestroyed=${agentDestroyed}`)
+    }
+
     private baseLog(
         level: LogLevel,
         isMobile: Platform,
@@ -71,21 +95,25 @@ export class Logger {
         color?: ColorKey
     ): void {
         const now = new Date().toLocaleString()
-        const formatted = formatMessage(message)
+        const rawFormatted = formatMessage(message)
+        const formatted = sanitizeLogMessage(rawFormatted)
 
-        const userName = this.bot.userData.userName ? this.bot.userData.userName : 'MAIN'
+        const rawUserName = this.bot?.userData?.userName ? this.bot.userData.userName : 'MAIN'
+        const userName = redactAccountKey(rawUserName)
 
         const levelTag = level.toUpperCase()
-        const cleanMsg = `[${now}] [${userName}] [${levelTag}] ${platformText(isMobile)} [${title}] ${formatted}`
+        const cleanMsg = sanitizeLogMessage(
+            `[${now}] [${userName}] [${levelTag}] ${platformText(isMobile)} [${title}] ${formatted}`
+        )
 
-        const config = this.bot.config
+        const config = this.bot?.config
 
-        if (level === 'debug' && !config.debugLogs && !process.argv.includes('-dev')) {
+        if (level === 'debug' && !config?.debugLogs && !process.argv.includes('-dev')) {
             return
         }
 
         const badge = platformBadge(isMobile)
-        const consoleStr = `[${now}] [${userName}] [${levelTag}] ${badge} [${title}] ${formatted}`
+        const consoleStr = sanitizeLogMessage(`[${now}] [${userName}] [${levelTag}] ${badge} [${title}] ${formatted}`)
 
         let logColor: ColorKey | undefined = color
 
@@ -105,20 +133,22 @@ export class Logger {
             }
         }
 
-        if (level === 'error' && config.errorDiagnostics) {
-            const page = this.bot.isMobile ? this.bot.mainMobilePage : this.bot.mainDesktopPage
-            const error = message instanceof Error ? message : new Error(String(message))
-            errorDiagnostic(page, error)
+        if (level === 'error' && config?.errorDiagnostics) {
+            const page = this.bot?.isMobile ? this.bot?.mainMobilePage : this.bot?.mainDesktopPage
+            if (page) {
+                const error = message instanceof Error ? message : new Error(String(message))
+                errorDiagnostic(page, error)
+            }
         }
 
-        const consoleAllowed = this.shouldPassFilter(config.consoleLogFilter, level, cleanMsg)
-        const webhookAllowed = this.shouldPassFilter(config.webhook.webhookLogFilter, level, cleanMsg)
+        const consoleAllowed = this.shouldPassFilter(config?.consoleLogFilter, level, cleanMsg)
+        const webhookAllowed = this.shouldPassFilter(config?.webhook?.webhookLogFilter, level, cleanMsg)
 
         if (consoleAllowed) {
             consoleOut(level, consoleStr, getColorFn(logColor))
         }
 
-        if (!webhookAllowed) {
+        if (!webhookAllowed || !config?.webhook) {
             return
         }
 

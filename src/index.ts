@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import cluster, { Worker } from 'cluster'
 import type { BrowserContext, Cookie, Page } from 'patchright'
-import readline from 'node:readline' 
-import axios from 'axios' 
+import readline from 'node:readline'
+import axios from 'axios'
 import pkg from '../package.json'
 
 import type { BrowserFingerprintWithHeaders } from 'fingerprint-generator'
@@ -25,6 +25,8 @@ import AxiosClient from './util/Axios'
 import { sendDiscord, flushDiscordQueue } from './logging/Discord'
 import { sendNtfy, flushNtfyQueue } from './logging/Ntfy'
 import type { DashboardData } from './interface/DashboardData'
+import { HandoffStore } from './runtime/HandoffStore'
+import path from 'path'
 
 interface ExecutionContext {
     isMobile: boolean
@@ -71,7 +73,7 @@ interface UserData {
 
 export class MicrosoftRewardsBot {
     public logger: Logger
-    public config: any 
+    public config: any
     public utils: Utils
     public activities: Activities = new Activities(this)
     public browser: { func: BrowserFunc; utils: BrowserUtils }
@@ -96,6 +98,7 @@ export class MicrosoftRewardsBot {
     private searchManager: SearchManager
 
     public axios!: AxiosClient
+    public handoffStore?: HandoffStore
 
     constructor() {
         this.userData = {
@@ -124,13 +127,38 @@ export class MicrosoftRewardsBot {
     }
 
     private async getCurrentIP(): Promise<string> {
-        return await axios.get('https://api.ipify.org', { timeout: 5000 })
+        return await axios
+            .get('https://api.ipify.org', { timeout: 5000 })
             .then(res => res.data.trim())
             .catch(() => 'UNKNOWN_IP')
     }
 
     async initialize(): Promise<void> {
         this.accounts = loadAccounts()
+
+        // Hard gate: observerOnly must fail-fast if any automated activity worker is enabled
+        if (this.config?.observerOnly) {
+            const w = this.config.workers
+            if (
+                w?.doDailySet ||
+                w?.doSpecialPromotions ||
+                w?.doMorePromotions ||
+                w?.doPunchCards ||
+                w?.doAppPromotions ||
+                w?.doDailyCheckIn ||
+                w?.doReadToEarn
+            ) {
+                throw new Error(
+                    '[SECURITY] observerOnly mode is enabled: automated point-claiming workers must be disabled'
+                )
+            }
+        }
+
+        if (this.config?.handoffDirectory) {
+            this.handoffStore = new HandoffStore({
+                storagePath: path.join(path.resolve(this.config.handoffDirectory), 'handoff_store.json')
+            })
+        }
     }
 
     async run(): Promise<void> {
@@ -171,6 +199,12 @@ export class MicrosoftRewardsBot {
             worker.on('message', (msg: { __ipcLog?: IpcLog; __stats?: AccountStats[] }) => {
                 if (msg.__stats) {
                     allAccountStats.push(...msg.__stats)
+                }
+
+                if ((msg as any)?.type === 'HANDOFF_ENVELOPE' && (msg as any)?.payload) {
+                    if (this.handoffStore) {
+                        void this.handoffStore.recordHandoff((msg as any).payload)
+                    }
                 }
 
                 const log = msg.__ipcLog
@@ -245,7 +279,11 @@ export class MicrosoftRewardsBot {
                 await flushAllWebhooks()
                 process.exit(0)
             } catch (error) {
-                this.logger.error('main', 'CLUSTER-WORKER-ERROR', `Worker task crash: ${error instanceof Error ? error.message : String(error)}`)
+                this.logger.error(
+                    'main',
+                    'CLUSTER-WORKER-ERROR',
+                    `Worker task crash: ${error instanceof Error ? error.message : String(error)}`
+                )
                 await flushAllWebhooks()
                 process.exit(1)
             }
@@ -268,25 +306,43 @@ export class MicrosoftRewardsBot {
                 // ==========================================
                 // 🔥 SISTEM GACHA LITE (MODE OFFICE VS RUMAH) 🔥
                 // ==========================================
-                const isOfficeMode = Math.random() > 0.5;
-                const modeName = isOfficeMode ? '🏢 OFFICE (Delay Singkat)' : '🏠 RUMAH (Delay Gabut Parah)';
-                this.logger.info('main', 'STEALTH', `🎲 [GACHA MODE LITE] Akun ${accountEmail} dapet mode: ${modeName}`, 'magenta');
+                const isOfficeMode = Math.random() > 0.5
+                const modeName = isOfficeMode ? '🏢 OFFICE (Delay Singkat)' : '🏠 RUMAH (Delay Gabut Parah)'
+                this.logger.info(
+                    'main',
+                    'STEALTH',
+                    `🎲 [GACHA MODE LITE] Akun ${accountEmail} dapet mode: ${modeName}`,
+                    'magenta'
+                )
 
-                let randomStartDelay;
+                let randomStartDelay
                 if (isOfficeMode) {
-                    randomStartDelay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000; // 10 sampai 20 detik
+                    randomStartDelay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000 // 10 sampai 20 detik
                 } else {
-                    randomStartDelay = Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000; // 30 sampai 60 detik
+                    randomStartDelay = Math.floor(Math.random() * (60000 - 30000 + 1)) + 30000 // 30 sampai 60 detik
                 }
 
-                this.logger.info('main', 'STEALTH', `Menunggu ${(randomStartDelay / 1000).toFixed(0)} detik sebelum buka browser...`, 'cyan')
-                await this.utils.wait(randomStartDelay);
+                this.logger.info(
+                    'main',
+                    'STEALTH',
+                    `Menunggu ${(randomStartDelay / 1000).toFixed(0)} detik sebelum buka browser...`,
+                    'cyan'
+                )
+                await this.utils.wait(randomStartDelay)
 
-                this.logger.info('main', 'ACCOUNT-START', `Starting LITE account: ${accountEmail} | geoLocale: ${account.geoLocale}`)
+                this.logger.info(
+                    'main',
+                    'ACCOUNT-START',
+                    `Starting LITE account: ${accountEmail} | geoLocale: ${account.geoLocale}`
+                )
                 this.axios = new AxiosClient(account.proxy)
 
                 const result = await this.Main(account).catch(error => {
-                    void this.logger.error(true, 'FLOW', `Mobile flow failed for ${accountEmail}: ${error instanceof Error ? error.message : String(error)}`)
+                    void this.logger.error(
+                        true,
+                        'FLOW',
+                        `Mobile flow failed for ${accountEmail}: ${error instanceof Error ? error.message : String(error)}`
+                    )
                     return undefined
                 })
 
@@ -297,15 +353,47 @@ export class MicrosoftRewardsBot {
                     const accountInitialPoints = result.initialPoints ?? 0
                     const accountFinalPoints = accountInitialPoints + collectedPoints
 
-                    accountStats.push({ email: accountEmail, initialPoints: accountInitialPoints, finalPoints: accountFinalPoints, collectedPoints: collectedPoints, duration: parseFloat(durationSeconds), success: true })
-                    this.logger.info('main', 'ACCOUNT-END', `Completed account: ${accountEmail} | Total: +${collectedPoints} | Old: ${accountInitialPoints} → New: ${accountFinalPoints} | Duration: ${durationSeconds}s`, 'green')
+                    accountStats.push({
+                        email: accountEmail,
+                        initialPoints: accountInitialPoints,
+                        finalPoints: accountFinalPoints,
+                        collectedPoints: collectedPoints,
+                        duration: parseFloat(durationSeconds),
+                        success: true
+                    })
+                    this.logger.info(
+                        'main',
+                        'ACCOUNT-END',
+                        `Completed account: ${accountEmail} | Total: +${collectedPoints} | Old: ${accountInitialPoints} → New: ${accountFinalPoints} | Duration: ${durationSeconds}s`,
+                        'green'
+                    )
                 } else {
-                    accountStats.push({ email: accountEmail, initialPoints: 0, finalPoints: 0, collectedPoints: 0, duration: parseFloat(durationSeconds), success: false, error: 'Flow failed' })
+                    accountStats.push({
+                        email: accountEmail,
+                        initialPoints: 0,
+                        finalPoints: 0,
+                        collectedPoints: 0,
+                        duration: parseFloat(durationSeconds),
+                        success: false,
+                        error: 'Flow failed'
+                    })
                 }
             } catch (error) {
                 const durationSeconds = ((Date.now() - accountStartTime) / 1000).toFixed(1)
-                this.logger.error('main', 'ACCOUNT-ERROR', `${accountEmail}: ${error instanceof Error ? error.message : String(error)}`)
-                accountStats.push({ email: accountEmail, initialPoints: 0, finalPoints: 0, collectedPoints: 0, duration: parseFloat(durationSeconds), success: false, error: error instanceof Error ? error.message : String(error) })
+                this.logger.error(
+                    'main',
+                    'ACCOUNT-ERROR',
+                    `${accountEmail}: ${error instanceof Error ? error.message : String(error)}`
+                )
+                accountStats.push({
+                    email: accountEmail,
+                    initialPoints: 0,
+                    finalPoints: 0,
+                    collectedPoints: 0,
+                    duration: parseFloat(durationSeconds),
+                    success: false,
+                    error: error instanceof Error ? error.message : String(error)
+                })
             }
 
             processedCount++
@@ -318,19 +406,50 @@ export class MicrosoftRewardsBot {
                 const oldIp = currentIpAddress
 
                 while (!ipChanged) {
-                    this.logger.warn('main', 'IP-INTERCEPTOR', '=======================================================', 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', `🔥 BATCH [${processedCount / 2}] LITE SELESAI! WAKTUNYA ROTASI IP HOTSPOT! 🔥`, 'yellow')
+                    this.logger.warn(
+                        'main',
+                        'IP-INTERCEPTOR',
+                        '=======================================================',
+                        'yellow'
+                    )
+                    this.logger.warn(
+                        'main',
+                        'IP-INTERCEPTOR',
+                        `🔥 BATCH [${processedCount / 2}] LITE SELESAI! WAKTUNYA ROTASI IP HOTSPOT! 🔥`,
+                        'yellow'
+                    )
                     this.logger.warn('main', 'IP-INTERCEPTOR', `IP PC saat ini: [ ${oldIp} ]`, 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', '1. Nyalakan "Mode Pesawat" di HP lu selama 5 detik.', 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', '2. Matikan "Mode Pesawat" & tunggu laptop konek Wi-Fi lagi.', 'yellow')
-                    this.logger.warn('main', 'IP-INTERCEPTOR', '=======================================================', 'yellow')
-                    
+                    this.logger.warn(
+                        'main',
+                        'IP-INTERCEPTOR',
+                        '1. Nyalakan "Mode Pesawat" di HP lu selama 5 detik.',
+                        'yellow'
+                    )
+                    this.logger.warn(
+                        'main',
+                        'IP-INTERCEPTOR',
+                        '2. Matikan "Mode Pesawat" & tunggu laptop konek Wi-Fi lagi.',
+                        'yellow'
+                    )
+                    this.logger.warn(
+                        'main',
+                        'IP-INTERCEPTOR',
+                        '=======================================================',
+                        'yellow'
+                    )
+
                     try {
-                        require('child_process').exec(`powershell -c (New-Object Media.SoundPlayer "C:\\Windows\\Media\\notify.wav").PlaySync();`);
+                        require('child_process').exec(
+                            `powershell -c (New-Object Media.SoundPlayer "C:\\Windows\\Media\\notify.wav").PlaySync();`
+                        )
                     } catch (e) {}
 
                     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-                    await new Promise<void>(resolve => rl.question('👉 Jika PC sudah dapet internet baru, pencet [ENTER] buat verifikasi...', () => resolve()))
+                    await new Promise<void>(resolve =>
+                        rl.question('👉 Jika PC sudah dapet internet baru, pencet [ENTER] buat verifikasi...', () =>
+                            resolve()
+                        )
+                    )
                     rl.close()
 
                     this.logger.info('main', 'IP-INTERCEPTOR', 'Mengecek IP baru ke server...')
@@ -339,10 +458,20 @@ export class MicrosoftRewardsBot {
                     if (checkNewIp !== oldIp && checkNewIp !== 'UNKNOWN_IP') {
                         currentIpAddress = checkNewIp
                         ipChanged = true
-                        this.logger.info('main', 'IP-INTERCEPTOR', `🚀 IP Baru Terdeteksi: [ ${currentIpAddress} ]! Lanjut manasin akun...`, 'green')
+                        this.logger.info(
+                            'main',
+                            'IP-INTERCEPTOR',
+                            `🚀 IP Baru Terdeteksi: [ ${currentIpAddress} ]! Lanjut manasin akun...`,
+                            'green'
+                        )
                         await this.utils.wait(3000)
                     } else {
-                        this.logger.error('main', 'IP-INTERCEPTOR', `❌ GAGAL! IP lu masih [ ${checkNewIp} ]. Ulangi mode pesawatnya!`, 'red')
+                        this.logger.error(
+                            'main',
+                            'IP-INTERCEPTOR',
+                            `❌ GAGAL! IP lu masih [ ${checkNewIp} ]. Ulangi mode pesawatnya!`,
+                            'red'
+                        )
                         await this.utils.wait(3000)
                     }
                 }
@@ -355,7 +484,12 @@ export class MicrosoftRewardsBot {
             const totalFinal = accountStats.reduce((sum, s) => sum + s.finalPoints, 0)
             const totalDuration = ((Date.now() - runStartTime) / 1000 / 60).toFixed(1)
 
-            this.logger.info('main', 'RUN-END', `Completed all LITE accounts | Processed: ${accountStats.length} | Total points: +${totalCollected} | Old total: ${totalInitial} → New total: ${totalFinal} | Runtime: ${totalDuration}min`, 'green')
+            this.logger.info(
+                'main',
+                'RUN-END',
+                `Completed all LITE accounts | Processed: ${accountStats.length} | Total points: +${totalCollected} | Old total: ${totalInitial} → New total: ${totalFinal} | Runtime: ${totalDuration}min`,
+                'green'
+            )
             await flushAllWebhooks()
             process.exit(0)
         }
@@ -378,35 +512,35 @@ export class MicrosoftRewardsBot {
 
                 await this.login.login(this.mainMobilePage, account)
 
-                try {
-                    this.accessToken = await this.login.getAppAccessToken(this.mainMobilePage, accountEmail)
-                } catch (error) {}
-
                 this.cookies.mobile = await initialContext.cookies()
                 this.fingerprint = mobileSession.fingerprint
 
                 const data: DashboardData = await this.browser.func.getDashboardData()
-                
-                this.userData.geoLocale = account.geoLocale === 'auto' ? data.userProfile.attributes.country : account.geoLocale.toLowerCase()
+
+                this.userData.geoLocale =
+                    account.geoLocale === 'auto' ? data.userProfile.attributes.country : account.geoLocale.toLowerCase()
                 this.userData.initialPoints = data.userStatus.availablePoints
                 this.userData.currentPoints = data.userStatus.availablePoints
                 const initialPoints = this.userData.initialPoints ?? 0
 
-                this.logger.info('main', 'FLOW', `LITE MODE: Mematikan tugas Promosi, PunchCards, dan Task berat...`, 'cyan')
-                
-                if (this.config.workers.doDailyCheckIn) {
-                    await this.activities.doDailyCheckIn()
-                }
-
-                if (this.config.workers.doReadToEarn) {
-                    await this.activities.doReadToEarn()
-                }
+                this.logger.info(
+                    'main',
+                    'FLOW',
+                    `LITE MODE: Mematikan tugas Promosi, PunchCards, dan Task berat...`,
+                    'cyan'
+                )
 
                 const searchPoints = await this.browser.func.getSearchPoints()
                 const missingSearchPoints = this.browser.func.missingSearchPoints(searchPoints, true)
 
                 this.cookies.mobile = await initialContext.cookies()
-                const { mobilePoints, desktopPoints } = await this.searchManager.doSearches(data, missingSearchPoints, mobileSession, account, accountEmail)
+                const { mobilePoints, desktopPoints } = await this.searchManager.doSearches(
+                    data,
+                    missingSearchPoints,
+                    mobileSession,
+                    account,
+                    accountEmail
+                )
 
                 mobileContextClosed = true
                 this.userData.gainedPoints = mobilePoints + desktopPoints
@@ -434,7 +568,9 @@ async function main(): Promise<void> {
     checkNodeVersion()
     const rewardsBot = new MicrosoftRewardsBot()
 
-    process.on('beforeExit', () => { void flushAllWebhooks() })
+    process.on('beforeExit', () => {
+        void flushAllWebhooks()
+    })
     process.on('SIGINT', async () => {
         rewardsBot.logger.warn('main', 'PROCESS', 'Sinyal Ctrl+C diterima, mematikan bot...')
         await flushAllWebhooks()

@@ -2,7 +2,6 @@ import type { Page } from 'patchright'
 import type { MicrosoftRewardsBot } from '../../index'
 import { saveSessionData, setRateLimitCooldown, getRateLimitCooldown } from '../../util/Load'
 
-import { MobileAccessLogin } from './methods/MobileAccessLogin'
 import { EmailLogin } from './methods/EmailLogin'
 import { PasswordlessLogin } from './methods/PasswordlessLogin'
 import { TotpLogin } from './methods/Totp2FALogin'
@@ -30,7 +29,7 @@ type LoginState =
     | 'OTP_CODE_ENTRY'
     | 'UNKNOWN'
     | 'CHROMEWEBDATA_ERROR'
-    | 'TOO_MANY_REQUESTS' 
+    | 'TOO_MANY_REQUESTS'
 
 export class Login {
     emailLogin: EmailLogin
@@ -38,7 +37,7 @@ export class Login {
     totp2FALogin: TotpLogin
     codeLogin: CodeLogin
     recoveryLogin: RecoveryLogin
-    private loginRetryCount = 0 
+    private loginRetryCount = 0
 
     private readonly selectors = {
         primaryButton: 'button[data-testid="primaryButton"]',
@@ -187,17 +186,14 @@ while (iteration < maxIterations) {
             throw error
         }
     }
-    
-    async getAppAccessToken(page: Page, email: string) {
-        this.bot.logger.info(this.bot.isMobile, 'GET-APP-TOKEN', 'Requesting mobile access token')
-        return await new MobileAccessLogin(this.bot, page).get(email)
-    }
+
+
 
     private async detectCurrentState(page: Page, account?: Account): Promise<LoginState> {
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {})
 
         const url = new URL(page.url())
-        
+
         if (url.hostname === 'login.live.com' && url.pathname === '/ppsecure/post.srf') {
             const pageContent = await page.content().catch(() => '')
             if (pageContent.toLowerCase().includes('too many requests')) {
@@ -218,7 +214,7 @@ while (iteration < maxIterations) {
             [this.selectors.emailEntry, 'EMAIL_INPUT'],
             [this.selectors.recoveryEmail, 'RECOVERY_EMAIL_INPUT'],
             ['#iProofEmail, input[name="proof"]', 'RECOVERY_EMAIL_INPUT'],
-            ['#idDiv_SAOTCS_Title, *:has-text("Get a code to sign in")', 'GET_A_CODE'], 
+            ['#idDiv_SAOTCS_Title, *:has-text("Get a code to sign in")', 'GET_A_CODE'],
             [this.selectors.kmsiVideo, 'KMSI_PROMPT'],
             [this.selectors.passKeyVideo, 'PASSKEY_VIDEO'],
             [this.selectors.passKeyError, 'PASSKEY_ERROR'],
@@ -238,8 +234,8 @@ while (iteration < maxIterations) {
         if (foundStates.length === 0) return 'UNKNOWN'
 
         const priorities: LoginState[] = [
-            'ACCOUNT_LOCKED', 'ERROR_ALERT', 'PASSKEY_VIDEO', 'PASSKEY_ERROR', 'KMSI_PROMPT', 
-            'PASSWORD_INPUT', 'EMAIL_INPUT', 'SIGN_IN_ANOTHER_WAY', 'SIGN_IN_ANOTHER_WAY_EMAIL', 
+            'ACCOUNT_LOCKED', 'ERROR_ALERT', 'PASSKEY_VIDEO', 'PASSKEY_ERROR', 'KMSI_PROMPT',
+            'PASSWORD_INPUT', 'EMAIL_INPUT', 'SIGN_IN_ANOTHER_WAY', 'SIGN_IN_ANOTHER_WAY_EMAIL',
             'RECOVERY_EMAIL_INPUT', 'GET_A_CODE', 'OTP_CODE_ENTRY', 'LOGIN_PASSWORDLESS', '2FA_TOTP'
         ]
 
@@ -254,10 +250,10 @@ while (iteration < maxIterations) {
         this.bot.logger.debug(this.bot.isMobile, 'HANDLE-STATE', `Processing state: ${state}`)
 
         switch (state) {
-            case 'TOO_MANY_REQUESTS': { 
+            case 'TOO_MANY_REQUESTS': {
                 const configLimit = this.bot.config.loginRateLimit
                 if (!configLimit) throw new Error('loginRateLimit config missing')
-                
+
                 this.loginRetryCount++
                 if (this.loginRetryCount > configLimit.maxAttempts) {
                     throw new Error(`Rate limit retry exhausted after ${configLimit.maxAttempts} attempts`)
@@ -314,7 +310,7 @@ while (iteration < maxIterations) {
                         return true;
                     }
                 }
-                
+
                 if (this.bot.config.headless === false) {
                     this.bot.logger.warn(this.bot.isMobile, 'LOGIN-PASSWORDLESS', 'Headless is FALSE. Clicking "Send Code" to let you perform manual entry...', 'yellow')
                     const submits = ['#idSubmitButton', 'input[type="submit"]', 'button[type="submit"]', '#idBtn_Back'];
@@ -344,7 +340,7 @@ while (iteration < maxIterations) {
 
             // FIX RPL: Satukan state 2FA_TOTP ke mari biar ikut nahan thread pas lu mau input manual
             case '2FA_TOTP':
-            case 'OTP_CODE_ENTRY': { 
+            case 'OTP_CODE_ENTRY': {
                 this.bot.logger.info(this.bot.isMobile, 'LOGIN-OTP', 'OTP/2FA Code Entry screen detected. Checking fallbacks...');
                 const usePasswordBtn = page.locator('#idA_PWD, #iSignInInstead').first()
                 if (await usePasswordBtn.count() > 0 && await usePasswordBtn.isVisible()) {
@@ -352,7 +348,7 @@ while (iteration < maxIterations) {
                     await usePasswordBtn.click().catch(() => {})
                     await this.bot.utils.wait(2000)
                     return true
-                } 
+                }
 
                 if (this.bot.config.headless === false) {
                     this.bot.logger.warn(this.bot.isMobile, 'LOGIN-OTP', 'MANUAL OVERRIDE: Thread locked for 60s. Enter OTP pin directly on browser screen!', 'yellow')
@@ -360,7 +356,7 @@ while (iteration < maxIterations) {
                         await this.bot.utils.wait(1000)
                         const currentUrl = page.url()
                         if (currentUrl.includes('rewards.bing.com') || currentUrl.includes('account.microsoft.com')) {
-                            return true 
+                            return true
                         }
                     }
                 }
@@ -398,7 +394,7 @@ while (iteration < maxIterations) {
         const html = await page.content()
         const $ = await this.bot.browser.utils.loadInCheerio(html)
         if ($('section#dailyset').length > 0) {
-            this.bot.rewardsVersion = 'modern' 
+            this.bot.rewardsVersion = 'modern'
             this.bot.logger.warn(this.bot.isMobile, 'GET-REWARD-SESSION', 'Modern Rewards dashboard detected.')
         }
         const token = $(this.selectors.requestToken).attr('value') ?? $(this.selectors.requestTokenMeta).attr('content')

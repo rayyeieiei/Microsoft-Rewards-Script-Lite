@@ -2,9 +2,6 @@ import { z } from 'zod'
 import semver from 'semver'
 import pkg from '../../package.json'
 
-import { Config } from '../interface/Config'
-import { Account } from '../interface/Account'
-
 const NumberOrString = z.union([z.number(), z.string()])
 
 const LogFilterSchema = z.object({
@@ -62,10 +59,12 @@ export const ConfigSchema = z.object({
         doDailyCheckIn: z.boolean(),
         doReadToEarn: z.boolean()
     }),
-    loginRateLimit: z.object({ 
-        delay: NumberOrString,
-        maxAttempts: z.number().int().positive()
-    }).optional(),
+    loginRateLimit: z
+        .object({
+            delay: NumberOrString,
+            maxAttempts: z.number().int().positive()
+        })
+        .optional(),
     searchOnBingLocalQueries: z.boolean(),
     globalTimeout: NumberOrString,
     searchSettings: z.object({
@@ -83,8 +82,14 @@ export const ConfigSchema = z.object({
     webhook: WebhookSchema
 })
 
+import path from 'path'
+import { URL } from 'url'
+import { Config, LiteRuntimeConfig } from '../interface/Config'
+import { Account } from '../interface/Account'
+
 // Account
 export const AccountSchema = z.object({
+    id: z.string().uuid().optional(),
     email: z.string(),
     password: z.string(),
     totpSecret: z.string().optional(),
@@ -103,6 +108,70 @@ export const AccountSchema = z.object({
         desktop: z.boolean()
     })
 })
+
+export const LiteRuntimeConfigSchema = z
+    .object({
+        contractVersion: z.literal(1),
+        requestTimeoutMs: z.number().positive(),
+        accountBudgetMs: z.number().positive(),
+        maxReadRetries: z.number().nonnegative(),
+        handoffDirectory: z.string().min(1),
+        allowedApiOrigins: z.array(z.string()).min(1),
+        observerOnly: z.literal(true)
+    })
+    .strict()
+
+export function validateLiteRuntimeConfig(data: unknown): LiteRuntimeConfig {
+    if (!data || typeof data !== 'object') {
+        throw new Error('Config must be a non-null object')
+    }
+
+    // Check for raw forbidden token/cookie keys in config
+    const str = JSON.stringify(data).toLowerCase()
+    if (str.includes('"accesstoken"') || str.includes('"refreshtoken"') || str.includes('"cookie"')) {
+        throw new Error('[SECURITY] JSON config cannot contain raw tokens or cookies')
+    }
+
+    const parsed = LiteRuntimeConfigSchema.parse(data)
+
+    // Validate origins
+    for (const origin of parsed.allowedApiOrigins) {
+        let u: URL
+        try {
+            u = new URL(origin)
+        } catch {
+            throw new Error(`[CONFIG] Invalid origin format: ${origin}`)
+        }
+        if (u.username || u.password) {
+            throw new Error(`[CONFIG] Origin ${origin} must not contain embedded credentials`)
+        }
+    }
+
+    const resolvedHandoffDir = path.resolve(parsed.handoffDirectory)
+
+    return {
+        ...parsed,
+        handoffDirectory: resolvedHandoffDir
+    }
+}
+
+export function validateUniqueAccountIdentities(accounts: Array<{ id?: string; email: string }>): void {
+    const seenIds = new Set<string>()
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+    for (const acc of accounts) {
+        if (!acc.id) {
+            throw new Error(`[IDENTITY] Account missing required explicit UUID id: ${acc.email}`)
+        }
+        if (!uuidRegex.test(acc.id)) {
+            throw new Error(`[IDENTITY] Account id must be an explicit valid UUID: ${acc.id}`)
+        }
+        if (seenIds.has(acc.id)) {
+            throw new Error(`[IDENTITY] Duplicate accountId detected: ${acc.id}`)
+        }
+        seenIds.add(acc.id)
+    }
+}
 
 export function validateConfig(data: unknown): Config {
     return ConfigSchema.parse(data) as Config
