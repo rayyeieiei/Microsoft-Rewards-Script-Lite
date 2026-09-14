@@ -1,5 +1,13 @@
 export type NumberOrString = number | string
 
+export interface LiteDashboardConfig {
+    enabled: boolean
+    host: '127.0.0.1'
+    port: number
+    maxSseClients: number
+    sseHeartbeatMs: number
+}
+
 export interface LiteRuntimeConfig {
     contractVersion: 1
     requestTimeoutMs: number
@@ -8,6 +16,7 @@ export interface LiteRuntimeConfig {
     handoffDirectory: string
     allowedApiOrigins: string[]
     observerOnly: true
+    dashboard?: LiteDashboardConfig
 }
 
 export interface Config {
@@ -28,6 +37,7 @@ export interface Config {
         delay: NumberOrString
         maxAttempts: number
     }
+    dashboard?: LiteDashboardConfig
 }
 
 export type QueryEngine = 'google' | 'wikipedia' | 'reddit' | 'local'

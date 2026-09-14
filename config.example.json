@@ -64,5 +64,12 @@
             "keywords": ["starting account", "select number", "collected"],
             "regexPatterns": []
         }
+    },
+    "dashboard": {
+        "enabled": false,
+        "host": "127.0.0.1",
+        "port": 4100,
+        "maxSseClients": 10,
+        "sseHeartbeatMs": 20000
     }
 }

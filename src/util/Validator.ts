@@ -41,6 +41,16 @@ const WebhookSchema = z.object({
     webhookLogFilter: LogFilterSchema
 })
 
+export const LiteDashboardConfigSchema = z
+    .object({
+        enabled: z.boolean(),
+        host: z.literal('127.0.0.1'),
+        port: z.number().int().min(1024).max(65535),
+        maxSseClients: z.number().int().min(1).max(25),
+        sseHeartbeatMs: z.number().int().min(5000).max(60000)
+    })
+    .strict()
+
 // Config
 export const ConfigSchema = z.object({
     baseURL: z.string(),
@@ -79,7 +89,8 @@ export const ConfigSchema = z.object({
     debugLogs: z.boolean(),
     proxy: z.object({ queryEngine: z.boolean() }),
     consoleLogFilter: LogFilterSchema,
-    webhook: WebhookSchema
+    webhook: WebhookSchema,
+    dashboard: LiteDashboardConfigSchema.optional()
 })
 
 import path from 'path'
@@ -117,7 +128,8 @@ export const LiteRuntimeConfigSchema = z
         maxReadRetries: z.number().nonnegative(),
         handoffDirectory: z.string().min(1),
         allowedApiOrigins: z.array(z.string()).min(1),
-        observerOnly: z.literal(true)
+        observerOnly: z.literal(true),
+        dashboard: LiteDashboardConfigSchema.optional()
     })
     .strict()
 
