@@ -38,6 +38,7 @@ export function sanitizeLogMessage(input: string): string {
     sanitized = sanitized.replace(/\b(access_token=)([^&\s"'`]+)/gi, '$1[REDACTED]')
     sanitized = sanitized.replace(/\b(refresh_token=)([^&\s"'`]+)/gi, '$1[REDACTED]')
     sanitized = sanitized.replace(/\b(requestToken=)([^&\s"'`]+)/gi, '$1[REDACTED]')
+    sanitized = sanitized.replace(/\b(token=)([^&\s"'`]+)/gi, '$1[REDACTED]')
     sanitized = sanitized.replace(/\b(secret=)([^&\s"'`]+)/gi, '$1[REDACTED]')
 
     // 4. Redact Authorization Header & Bearer Tokens
