@@ -27,6 +27,11 @@ import { sendNtfy, flushNtfyQueue } from './logging/Ntfy'
 import type { DashboardData } from './interface/DashboardData'
 import { HandoffStore } from './runtime/HandoffStore'
 import path from 'path'
+import crypto from 'crypto'
+import { DashboardServer } from './dashboard/DashboardServer'
+import { ReadinessSnapshotStore } from './dashboard/ReadinessSnapshotStore'
+import { AccountReadinessEvaluator, ExistingRuntimeEvidence } from './readiness/AccountReadinessEvaluator'
+import { validateReadinessUpdateEvent, ReadinessUpdateEvent } from './readiness/AccountReadinessTypes'
 
 interface ExecutionContext {
     isMobile: boolean
@@ -99,6 +104,9 @@ export class MicrosoftRewardsBot {
 
     public axios!: AxiosClient
     public handoffStore?: HandoffStore
+    public snapshotStore?: ReadinessSnapshotStore
+    public dashboardServer?: DashboardServer
+    public readinessEvaluator?: AccountReadinessEvaluator
 
     constructor() {
         this.userData = {
@@ -159,6 +167,35 @@ export class MicrosoftRewardsBot {
                 storagePath: path.join(path.resolve(this.config.handoffDirectory), 'handoff_store.json')
             })
         }
+
+        this.readinessEvaluator = new AccountReadinessEvaluator({
+            sessionBasePath: path.resolve(this.config.sessionPath || 'browser/sessions')
+        })
+
+        if (cluster.isPrimary) {
+            const sessionSecret = crypto.randomBytes(32).toString('hex')
+            this.snapshotStore = new ReadinessSnapshotStore({
+                maxTimelineEntries: 50,
+                now: () => Date.now(),
+                sessionSecret
+            })
+
+            // Pre-populate initial readiness for all loaded accounts
+            for (const acc of this.accounts) {
+                const readiness = this.readinessEvaluator.evaluate(acc, [])
+                this.snapshotStore.updateAccount(readiness, [])
+            }
+
+            const dashboardConfig = this.config.dashboard
+            if (dashboardConfig?.enabled) {
+                this.dashboardServer = new DashboardServer({
+                    config: dashboardConfig,
+                    store: this.snapshotStore,
+                    logFn: (lvl, msg) => this.logger[lvl]('main', 'DASHBOARD', msg)
+                })
+                await this.dashboardServer.start()
+            }
+        }
     }
 
     async run(): Promise<void> {
@@ -204,6 +241,17 @@ export class MicrosoftRewardsBot {
                 if ((msg as any)?.type === 'HANDOFF_ENVELOPE' && (msg as any)?.payload) {
                     if (this.handoffStore) {
                         void this.handoffStore.recordHandoff((msg as any).payload)
+                    }
+                }
+
+                if ((msg as any)?.type === 'readiness-update') {
+                    try {
+                        const validatedEvent = validateReadinessUpdateEvent(msg)
+                        if (this.snapshotStore) {
+                            this.snapshotStore.updateAccount(validatedEvent.readiness, validatedEvent.tasks)
+                        }
+                    } catch (err: any) {
+                        this.logger.warn('main', 'IPC-VALIDATION', `Rejected invalid readiness IPC update: ${err.message}`)
                     }
                 }
 
@@ -396,6 +444,12 @@ export class MicrosoftRewardsBot {
                 })
             }
 
+            const latestStat = accountStats[accountStats.length - 1]
+            await this.emitReadinessUpdate(account, {
+                sessionValid: latestStat?.success,
+                recentFailureCount: latestStat?.success ? 0 : 1
+            })
+
             processedCount++
 
             // ==========================================
@@ -560,6 +614,39 @@ export class MicrosoftRewardsBot {
             }
         }
     }
+
+    public async emitReadinessUpdate(account: Account, evidence?: ExistingRuntimeEvidence): Promise<void> {
+        if (!this.readinessEvaluator) return
+
+        const allTasks = this.handoffStore ? await this.handoffStore.getRecords() : []
+        const accountTasks = allTasks.filter(t => t.account.accountId === (account.id || account.email))
+        const readiness = this.readinessEvaluator.evaluate(account, accountTasks, evidence)
+
+        if (cluster.isWorker && process.send) {
+            const event: ReadinessUpdateEvent = {
+                type: 'readiness-update',
+                contractVersion: 1,
+                accountId: account.id || account.email,
+                readiness,
+                tasks: accountTasks,
+                emittedAt: new Date().toISOString()
+            }
+            process.send(event)
+        } else if (this.snapshotStore) {
+            this.snapshotStore.updateAccount(readiness, accountTasks)
+        }
+    }
+
+    public async stop(): Promise<void> {
+        if (this.dashboardServer) {
+            await this.dashboardServer.stop()
+            this.dashboardServer = undefined
+        }
+        if (this.snapshotStore) {
+            this.snapshotStore.dispose()
+            this.snapshotStore = undefined
+        }
+    }
 }
 
 export { executionContext }
@@ -573,11 +660,13 @@ async function main(): Promise<void> {
     })
     process.on('SIGINT', async () => {
         rewardsBot.logger.warn('main', 'PROCESS', 'Sinyal Ctrl+C diterima, mematikan bot...')
+        await rewardsBot.stop()
         await flushAllWebhooks()
         process.exit(130)
     })
     process.on('SIGTERM', async () => {
         rewardsBot.logger.warn('main', 'PROCESS', 'Sinyal SIGTERM diterima, mematikan bot...')
+        await rewardsBot.stop()
         await flushAllWebhooks()
         process.exit(143)
     })
