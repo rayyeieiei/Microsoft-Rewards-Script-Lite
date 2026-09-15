@@ -3,6 +3,7 @@ import { runDashboardTests } from './dashboard.test'
 import { runObservationImporterTests } from './observationImporter.test'
 import { runManualActionStoreTests } from './manualActionStore.test'
 import { runManualActionApiTests } from './manualActionApi.test'
+import { runBridgeSecurityAndE2ETests } from './bridgeSecurityAndE2E.test'
 
 async function runAll() {
     console.log('🧪 Starting Microsoft-Rewards-Script-Lite Full Test Suite...\n')
@@ -15,6 +16,8 @@ async function runAll() {
     await runManualActionStoreTests()
     console.log('')
     await runManualActionApiTests()
+    console.log('')
+    await runBridgeSecurityAndE2ETests()
     console.log('\n🎉 ALL TESTS IN SUITE PASSED SUCCESSFULLY!')
 }
 
