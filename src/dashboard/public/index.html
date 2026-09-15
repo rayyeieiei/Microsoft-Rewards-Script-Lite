@@ -21,97 +21,173 @@
     </header>
 
     <main class="app-main">
-        <!-- Prominent Disclaimer -->
-        <section class="disclaimer-banner" role="region" aria-label="Disclaimer">
-            <p>
-                <strong>Notice:</strong> Technical readiness only. This dashboard does not predict account safety or enforcement decisions.
-            </p>
-        </section>
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs" aria-label="Dashboard Navigation">
+            <button id="tab-readiness" class="tab-btn active" type="button" aria-selected="true">Technical Readiness</button>
+            <button id="tab-manual" class="tab-btn" type="button" aria-selected="false">Manual Action Center</button>
+        </nav>
 
-        <!-- Summary Metric Cards -->
-        <section class="summary-grid" aria-label="Account Status Overview">
-            <div class="card metric-card">
-                <span class="metric-label">Total Accounts</span>
-                <span class="metric-value" id="metric-total">0</span>
-            </div>
-            <div class="card metric-card metric-teal">
-                <span class="metric-label">Ready for Handoff</span>
-                <span class="metric-value" id="metric-ready">0</span>
-            </div>
-            <div class="card metric-card metric-blue">
-                <span class="metric-label">Auth Required</span>
-                <span class="metric-value" id="metric-auth">0</span>
-            </div>
-            <div class="card metric-card metric-purple">
-                <span class="metric-label">Manual Review</span>
-                <span class="metric-value" id="metric-manual">0</span>
-            </div>
-            <div class="card metric-card metric-amber">
-                <span class="metric-label">Not Ready</span>
-                <span class="metric-value" id="metric-notready">0</span>
-            </div>
-            <div class="card metric-card metric-red">
-                <span class="metric-label">Blocked</span>
-                <span class="metric-value" id="metric-blocked">0</span>
-            </div>
-        </section>
+        <!-- Technical Readiness View -->
+        <div id="view-readiness">
+            <!-- Prominent Disclaimer -->
+            <section class="disclaimer-banner" role="region" aria-label="Disclaimer">
+                <p>
+                    <strong>Notice:</strong> Technical readiness only. This dashboard does not predict account safety or enforcement decisions.
+                </p>
+            </section>
 
-        <!-- Controls Toolbar -->
-        <section class="toolbar" aria-label="Filters and Controls">
-            <div class="search-box">
-                <label for="search-input" class="sr-only">Search by account</label>
-                <input type="text" id="search-input" placeholder="Search by redacted account..." autocomplete="off">
-            </div>
-            <div class="filter-controls">
-                <label for="status-filter" class="sr-only">Filter by status</label>
-                <select id="status-filter">
-                    <option value="all">All Technical Statuses</option>
-                    <option value="technically-ready-for-handoff">Technically Ready for Handoff</option>
-                    <option value="auth-required">Authentication Required</option>
-                    <option value="manual-review-required">Manual Review Required</option>
-                    <option value="not-ready">Not Ready</option>
-                    <option value="blocked">Blocked</option>
-                    <option value="unknown">Unknown</option>
-                </select>
+            <!-- Summary Metric Cards -->
+            <section class="summary-grid" aria-label="Account Status Overview">
+                <div class="card metric-card">
+                    <span class="metric-label">Total Accounts</span>
+                    <span class="metric-value" id="metric-total">0</span>
+                </div>
+                <div class="card metric-card metric-teal">
+                    <span class="metric-label">Ready for Handoff</span>
+                    <span class="metric-value" id="metric-ready">0</span>
+                </div>
+                <div class="card metric-card metric-blue">
+                    <span class="metric-label">Auth Required</span>
+                    <span class="metric-value" id="metric-auth">0</span>
+                </div>
+                <div class="card metric-card metric-purple">
+                    <span class="metric-label">Manual Review</span>
+                    <span class="metric-value" id="metric-manual">0</span>
+                </div>
+                <div class="card metric-card metric-amber">
+                    <span class="metric-label">Not Ready</span>
+                    <span class="metric-value" id="metric-notready">0</span>
+                </div>
+                <div class="card metric-card metric-red">
+                    <span class="metric-label">Blocked</span>
+                    <span class="metric-value" id="metric-blocked">0</span>
+                </div>
+            </section>
 
-                <label for="sort-by" class="sr-only">Sort accounts</label>
-                <select id="sort-by">
-                    <option value="lastObserved">Sort by Last Check (Newest)</option>
-                    <option value="displayAccount">Sort by Account (A-Z)</option>
-                    <option value="status">Sort by Status</option>
-                </select>
+            <!-- Controls Toolbar -->
+            <section class="toolbar" aria-label="Filters and Controls">
+                <div class="search-box">
+                    <label for="search-input" class="sr-only">Search by account</label>
+                    <input type="text" id="search-input" placeholder="Search by redacted account..." autocomplete="off">
+                </div>
+                <div class="filter-controls">
+                    <label for="status-filter" class="sr-only">Filter by status</label>
+                    <select id="status-filter">
+                        <option value="all">All Technical Statuses</option>
+                        <option value="technically-ready-for-handoff">Technically Ready for Handoff</option>
+                        <option value="auth-required">Authentication Required</option>
+                        <option value="manual-review-required">Manual Review Required</option>
+                        <option value="not-ready">Not Ready</option>
+                        <option value="blocked">Blocked</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
 
-                <button id="btn-refresh" class="btn btn-secondary" type="button">Refresh View</button>
-                <a href="/api/diagnostics/export" class="btn btn-secondary" download="lite-diagnostics.json">Export Diagnostics</a>
+                    <label for="sort-by" class="sr-only">Sort accounts</label>
+                    <select id="sort-by">
+                        <option value="lastObserved">Sort by Last Check (Newest)</option>
+                        <option value="displayAccount">Sort by Account (A-Z)</option>
+                        <option value="status">Sort by Status</option>
+                    </select>
+
+                    <button id="btn-refresh" class="btn btn-secondary" type="button">Refresh View</button>
+                    <a href="/api/diagnostics/export" class="btn btn-secondary" download="lite-diagnostics.json">Export Diagnostics</a>
+                </div>
+            </section>
+
+            <!-- Accounts Table -->
+            <section class="table-container" aria-label="Accounts Table">
+                <table class="data-table" id="accounts-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Account</th>
+                            <th scope="col">Technical Status</th>
+                            <th scope="col">Session</th>
+                            <th scope="col">Pending Tasks</th>
+                            <th scope="col">Advertised Points</th>
+                            <th scope="col">Last Check</th>
+                            <th scope="col">Next Action</th>
+                            <th scope="col">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accounts-tbody">
+                        <!-- Populated dynamically via textContent and DOM methods -->
+                    </tbody>
+                </table>
+                <div id="empty-state" class="empty-state hidden">
+                    <p>No accounts match the selected criteria or no accounts loaded.</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- Manual Action Center View -->
+        <div id="view-manual" class="hidden">
+            <section class="disclaimer-banner" role="region" aria-label="Manual Action Disclaimer">
+                <p>
+                    <strong>Manual Action Center:</strong> Observations imported from Main runtime. User-reported actions remain unverified until exact Main observation proves server completion.
+                </p>
+            </section>
+
+            <section class="toolbar" aria-label="Manual Task Filters">
+                <div class="search-box">
+                    <label for="manual-search-input" class="sr-only">Search manual tasks by title</label>
+                    <input type="text" id="manual-search-input" placeholder="Search manual tasks by title..." autocomplete="off">
+                </div>
+                <div class="filter-controls">
+                    <label for="manual-lifecycle-filter" class="sr-only">Filter by lifecycle</label>
+                    <select id="manual-lifecycle-filter">
+                        <option value="all">All Lifecycle States</option>
+                        <option value="available">Available</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="action-reported">Action Reported</option>
+                        <option value="dismissed">Dismissed</option>
+                        <option value="expired">Expired</option>
+                    </select>
+
+                    <label for="manual-verification-filter" class="sr-only">Filter by verification</label>
+                    <select id="manual-verification-filter">
+                        <option value="all">All Verification States</option>
+                        <option value="unverified">Unverified</option>
+                        <option value="verification-pending">Verification Pending</option>
+                        <option value="verified-complete">Verified Complete</option>
+                        <option value="verification-failed">Verification Failed</option>
+                    </select>
+
+                    <button id="btn-manual-refresh" class="btn btn-secondary" type="button">Refresh Actions</button>
+                </div>
+            </section>
+
+            <section class="table-container" aria-label="Manual Actions Table">
+                <table class="data-table" id="manual-actions-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Account</th>
+                            <th scope="col">Task Title</th>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Advertised Points</th>
+                            <th scope="col">Lifecycle State</th>
+                            <th scope="col">Verification State</th>
+                            <th scope="col">Last Observed</th>
+                            <th scope="col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="manual-actions-tbody">
+                        <!-- Populated dynamically via DOM APIs -->
+                    </tbody>
+                </table>
+                <div id="manual-empty-state" class="empty-state hidden">
+                    <p>No manual actions found matching criteria.</p>
+                </div>
+            </section>
+
+            <div class="pagination-bar" id="manual-pagination">
+                <button id="btn-manual-prev" class="btn btn-secondary" type="button" disabled>Previous</button>
+                <span id="manual-page-info" class="pagination-info">Showing active records</span>
+                <button id="btn-manual-next" class="btn btn-secondary" type="button" disabled>Next</button>
             </div>
-        </section>
+        </div>
 
         <!-- Accessible Live Status Region -->
         <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-
-        <!-- Accounts Table -->
-        <section class="table-container" aria-label="Accounts Table">
-            <table class="data-table" id="accounts-table">
-                <thead>
-                    <tr>
-                        <th scope="col">Account</th>
-                        <th scope="col">Technical Status</th>
-                        <th scope="col">Session</th>
-                        <th scope="col">Pending Tasks</th>
-                        <th scope="col">Advertised Points</th>
-                        <th scope="col">Last Check</th>
-                        <th scope="col">Next Action</th>
-                        <th scope="col">Details</th>
-                    </tr>
-                </thead>
-                <tbody id="accounts-tbody">
-                    <!-- Populated dynamically via textContent and DOM methods -->
-                </tbody>
-            </table>
-            <div id="empty-state" class="empty-state hidden">
-                <p>No accounts match the selected criteria or no accounts loaded.</p>
-            </div>
-        </section>
     </main>
 
     <!-- Detail Drawer / Accessible Modal -->
@@ -130,6 +206,33 @@
             <div class="modal-footer">
                 <span class="modal-disclaimer">Server-advertised only — not earned or guaranteed</span>
                 <button id="btn-modal-done" class="btn btn-primary" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Action Modal -->
+    <div id="report-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div>
+                    <span class="modal-subtitle">Manual Action Center</span>
+                    <h2 id="report-modal-title" class="modal-title">Report Action Completed</h2>
+                </div>
+                <button id="btn-close-report-modal" class="btn-close" aria-label="Close report dialog">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="report-modal-task-title" class="report-task-display"></p>
+                <p class="modal-disclaimer">
+                    Reporting marks the task as <em>action-reported</em> (unverified). It will remain unverified until the next Main observation proves completion.
+                </p>
+                <div class="form-group">
+                    <label for="report-note-input">Optional Note (max 200 chars):</label>
+                    <textarea id="report-note-input" maxlength="200" rows="3" placeholder="e.g. Completed manual search on Edge browser"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-report" class="btn btn-secondary" type="button">Cancel</button>
+                <button id="btn-submit-report" class="btn btn-primary" type="button">Submit Report</button>
             </div>
         </div>
     </div>

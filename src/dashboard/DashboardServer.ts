@@ -1,10 +1,17 @@
 import http from 'http'
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 import { URL } from 'url'
 import { ReadinessSnapshotStore } from './ReadinessSnapshotStore'
 import { sanitizeLogMessage } from '../util/Redaction'
 import { DashboardSnapshotDto } from './DashboardTypes'
+import { ManualActionStore } from '../manual/ManualActionStore'
+import {
+    ManualActionRecord,
+    ManualActionMutationPayloadSchema,
+    ConflictError
+} from '../manual/ManualActionTypes'
 
 export interface LiteDashboardConfig {
     enabled: boolean
@@ -17,6 +24,7 @@ export interface LiteDashboardConfig {
 export interface DashboardServerOptions {
     config: LiteDashboardConfig
     store: ReadinessSnapshotStore
+    manualActionStore?: ManualActionStore
     publicDir?: string
     logFn?: (level: 'info' | 'warn' | 'error', message: string) => void
 }
@@ -30,17 +38,20 @@ interface SseClient {
 export class DashboardServer {
     private readonly config: LiteDashboardConfig
     private readonly store: ReadinessSnapshotStore
+    private readonly manualActionStore?: ManualActionStore
     private readonly publicDir: string
     private readonly logFn?: (level: 'info' | 'warn' | 'error', message: string) => void
 
     private server?: http.Server
     private sseClients = new Map<string, SseClient>()
+    private csrfSessions = new Map<string, number>()
     private storeUnsubscribe?: () => void
     private isRunning = false
 
     constructor(options: DashboardServerOptions) {
         this.config = options.config
         this.store = options.store
+        this.manualActionStore = options.manualActionStore
         this.logFn = options.logFn
 
         // Injected publicDir (Amendment 8)
@@ -213,11 +224,12 @@ export class DashboardServer {
             res.setHeader('Vary', 'Origin')
         }
 
-        // 4. Method validation (only GET is allowed)
-        if (req.method !== 'GET') {
-            res.setHeader('Allow', 'GET')
-            res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
-            res.end('Method Not Allowed')
+        // 4. OPTIONS preflight handling
+        if (req.method === 'OPTIONS') {
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token')
+            res.writeHead(204)
+            res.end()
             return
         }
 
@@ -225,6 +237,53 @@ export class DashboardServer {
         const pathname = parsedUrl.pathname
 
         // 5. Route dispatch
+        // A. Mutating manual action endpoints (Amendment 10)
+        const mutationMatch = pathname.match(
+            /^\/api\/manual-actions\/([0-9a-f-]+)\/(report|dismiss|reopen)$/i
+        )
+        if (mutationMatch) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST')
+                res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
+                res.end('Method Not Allowed')
+                return
+            }
+            this.handleManualActionMutation(req, res, pathname, mutationMatch[1]!, mutationMatch[2]!.toLowerCase())
+            return
+        }
+
+        // B. Query manual action endpoint (Amendment 7: Read-Only Query Semantics)
+        if (pathname === '/api/manual-actions') {
+            if (req.method !== 'GET') {
+                res.setHeader('Allow', 'GET')
+                res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
+                res.end('Method Not Allowed')
+                return
+            }
+            this.handleManualActionQuery(res, parsedUrl)
+            return
+        }
+
+        // C. Dedicated CSRF session endpoint (Amendment 9)
+        if (pathname === '/api/session') {
+            if (req.method !== 'GET') {
+                res.setHeader('Allow', 'GET')
+                res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
+                res.end('Method Not Allowed')
+                return
+            }
+            this.handleCsrfSession(res)
+            return
+        }
+
+        // D. Existing GET-only endpoints
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET')
+            res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
+            res.end('Method Not Allowed')
+            return
+        }
+
         if (pathname === '/' || pathname === '/index.html') {
             this.serveStaticFile('index.html', 'text/html; charset=utf-8', res)
         } else if (pathname === '/assets/styles.css') {
@@ -260,6 +319,174 @@ export class DashboardServer {
         } else {
             res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
             res.end('Not Found')
+        }
+    }
+
+    private handleCsrfSession(res: http.ServerResponse): void {
+        const token = crypto.randomBytes(32).toString('hex')
+        const expiresAt = Date.now() + 3600 * 1000 // 1 hour
+        this.csrfSessions.set(token, expiresAt)
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+        res.end(
+            JSON.stringify({
+                csrfToken: token,
+                expiresAt: new Date(expiresAt).toISOString()
+            })
+        )
+    }
+
+    private validateCsrfToken(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+        const rawHeader = req.headers['x-csrf-token']
+        if (typeof rawHeader !== 'string' || !rawHeader.trim()) {
+            res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'Forbidden: Missing x-csrf-token header' }))
+            return false
+        }
+
+        const token = rawHeader.trim()
+        const tokenBuf = Buffer.from(token)
+        const now = Date.now()
+
+        let matchedToken: string | null = null
+        for (const [storedToken, expiresAt] of this.csrfSessions.entries()) {
+            if (now > expiresAt) {
+                this.csrfSessions.delete(storedToken)
+                continue
+            }
+            const storedBuf = Buffer.from(storedToken)
+            if (tokenBuf.length === storedBuf.length && crypto.timingSafeEqual(tokenBuf, storedBuf)) {
+                matchedToken = storedToken
+                break
+            }
+        }
+
+        if (!matchedToken) {
+            res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'Forbidden: Invalid or expired CSRF token' }))
+            return false
+        }
+
+        return true
+    }
+
+    private async parseJsonBody(req: http.IncomingMessage, maxBytes = 16384): Promise<unknown> {
+        return new Promise((resolve, reject) => {
+            let body = ''
+            let received = 0
+            req.on('data', chunk => {
+                received += chunk.length
+                if (received > maxBytes) {
+                    req.destroy()
+                    reject(new Error('Payload Too Large'))
+                    return
+                }
+                body += chunk
+            })
+            req.on('end', () => {
+                try {
+                    resolve(JSON.parse(body || '{}'))
+                } catch (err: any) {
+                    reject(new Error(`Invalid JSON syntax: ${err.message}`))
+                }
+            })
+            req.on('error', err => reject(err))
+        })
+    }
+
+    private handleManualActionQuery(res: http.ServerResponse, parsedUrl: URL): void {
+        if (!this.manualActionStore) {
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ records: [], totalMatching: 0 }))
+            return
+        }
+
+        const accountRef = parsedUrl.searchParams.get('accountRef') || undefined
+        const lifecycleState = (parsedUrl.searchParams.get('lifecycleState') as any) || undefined
+        const verificationState = (parsedUrl.searchParams.get('verificationState') as any) || undefined
+        const search = parsedUrl.searchParams.get('search') || undefined
+        const cursor = parsedUrl.searchParams.get('cursor') || undefined
+        const limitRaw = parsedUrl.searchParams.get('limit')
+        const limit = limitRaw ? parseInt(limitRaw, 10) : 20
+
+        const result = this.manualActionStore.query({
+            accountRef,
+            lifecycleState,
+            verificationState,
+            search,
+            cursor,
+            limit
+        })
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify(result))
+    }
+
+    private async handleManualActionMutation(
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        _pathname: string,
+        recordId: string,
+        action: string
+    ): Promise<void> {
+        if (!this.validateCsrfToken(req, res)) {
+            return
+        }
+
+        const contentType = req.headers['content-type'] || ''
+        if (!contentType.includes('application/json')) {
+            res.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'Unsupported Media Type: expected application/json' }))
+            return
+        }
+
+        if (!this.manualActionStore) {
+            res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'ManualActionStore is not configured' }))
+            return
+        }
+
+        let payloadJson: unknown
+        try {
+            payloadJson = await this.parseJsonBody(req, 16384)
+        } catch (err: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: err.message }))
+            return
+        }
+
+        const parseResult = ManualActionMutationPayloadSchema.safeParse(payloadJson)
+        if (!parseResult.success) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: `Validation error: ${parseResult.error.message}` }))
+            return
+        }
+
+        const payload = parseResult.data
+
+        try {
+            let updatedRecord: ManualActionRecord
+            if (action === 'report') {
+                updatedRecord = await this.manualActionStore.reportAction(recordId, payload)
+            } else if (action === 'dismiss') {
+                updatedRecord = await this.manualActionStore.dismissAction(recordId, payload)
+            } else {
+                updatedRecord = await this.manualActionStore.reopenAction(recordId, payload)
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ success: true, record: updatedRecord }))
+        } catch (err: any) {
+            if (err instanceof ConflictError) {
+                res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: err.message, currentRevision: err.currentRevision }))
+            } else if (err.message && err.message.includes('not found')) {
+                res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: err.message }))
+            } else {
+                res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: 'Internal server error' }))
+            }
         }
     }
 
