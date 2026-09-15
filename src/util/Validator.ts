@@ -51,6 +51,20 @@ export const LiteDashboardConfigSchema = z
     })
     .strict()
 
+export const ObservationBridgeImportConfigSchema = z
+    .object({
+        enabled: z.boolean(),
+        bridgeDirectory: z.string().min(1),
+        pollIntervalMs: z.number().int().min(500).max(60000).optional(),
+        maximumFileBytes: z.number().int().positive().optional(),
+        maxIncomingFiles: z.number().int().positive().optional(),
+        maxBridgeDirectoryBytes: z.number().int().positive().optional(),
+        processedRetentionHours: z.number().int().positive().optional(),
+        rejectionMetadataRetentionHours: z.number().int().positive().optional(),
+        claimingStaleMs: z.number().int().positive().optional()
+    })
+    .strict()
+
 // Config
 export const ConfigSchema = z.object({
     baseURL: z.string(),
@@ -90,7 +104,8 @@ export const ConfigSchema = z.object({
     proxy: z.object({ queryEngine: z.boolean() }),
     consoleLogFilter: LogFilterSchema,
     webhook: WebhookSchema,
-    dashboard: LiteDashboardConfigSchema.optional()
+    dashboard: LiteDashboardConfigSchema.optional(),
+    observationBridge: ObservationBridgeImportConfigSchema.optional()
 })
 
 import path from 'path'
@@ -129,7 +144,8 @@ export const LiteRuntimeConfigSchema = z
         handoffDirectory: z.string().min(1),
         allowedApiOrigins: z.array(z.string()).min(1),
         observerOnly: z.literal(true),
-        dashboard: LiteDashboardConfigSchema.optional()
+        dashboard: LiteDashboardConfigSchema.optional(),
+        observationBridge: ObservationBridgeImportConfigSchema.optional()
     })
     .strict()
 
@@ -160,10 +176,17 @@ export function validateLiteRuntimeConfig(data: unknown): LiteRuntimeConfig {
     }
 
     const resolvedHandoffDir = path.resolve(parsed.handoffDirectory)
+    const resolvedBridgeConfig = parsed.observationBridge
+        ? {
+              ...parsed.observationBridge,
+              bridgeDirectory: path.resolve(parsed.observationBridge.bridgeDirectory)
+          }
+        : undefined
 
     return {
         ...parsed,
-        handoffDirectory: resolvedHandoffDir
+        handoffDirectory: resolvedHandoffDir,
+        observationBridge: resolvedBridgeConfig
     }
 }
 

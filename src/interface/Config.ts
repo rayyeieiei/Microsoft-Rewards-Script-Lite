@@ -8,6 +8,18 @@ export interface LiteDashboardConfig {
     sseHeartbeatMs: number
 }
 
+export interface ObservationBridgeImportConfig {
+    enabled: boolean
+    bridgeDirectory: string
+    pollIntervalMs?: number
+    maximumFileBytes?: number
+    maxIncomingFiles?: number
+    maxBridgeDirectoryBytes?: number
+    processedRetentionHours?: number
+    rejectionMetadataRetentionHours?: number
+    claimingStaleMs?: number
+}
+
 export interface LiteRuntimeConfig {
     contractVersion: 1
     requestTimeoutMs: number
@@ -17,6 +29,7 @@ export interface LiteRuntimeConfig {
     allowedApiOrigins: string[]
     observerOnly: true
     dashboard?: LiteDashboardConfig
+    observationBridge?: ObservationBridgeImportConfig
 }
 
 export interface Config {
@@ -38,6 +51,7 @@ export interface Config {
         maxAttempts: number
     }
     dashboard?: LiteDashboardConfig
+    observationBridge?: ObservationBridgeImportConfig
 }
 
 export type QueryEngine = 'google' | 'wikipedia' | 'reddit' | 'local'
