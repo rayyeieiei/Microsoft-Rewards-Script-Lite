@@ -1,6 +1,7 @@
 import { runRuntimeTests } from './runtime.test'
 import { runDashboardTests } from './dashboard.test'
 import { runObservationImporterTests } from './observationImporter.test'
+import { runManualActionStoreTests } from './manualActionStore.test'
 
 async function runAll() {
     console.log('🧪 Starting Microsoft-Rewards-Script-Lite Full Test Suite...\n')
@@ -9,6 +10,8 @@ async function runAll() {
     await runDashboardTests()
     console.log('')
     await runObservationImporterTests()
+    console.log('')
+    await runManualActionStoreTests()
     console.log('\n🎉 ALL TESTS IN SUITE PASSED SUCCESSFULLY!')
 }
 
