@@ -10,6 +10,7 @@ import {
     canTransitionOutcome
 } from '../contracts/ExecutionContract'
 import { redactAccountKey, sanitizeLogMessage } from '../util/Redaction'
+import { retryAtomicRename } from '../util/FileUtils'
 
 export interface HandoffStoreData {
     schemaVersion: typeof EXECUTION_CONTRACT_VERSION
@@ -195,7 +196,7 @@ export class HandoffStore {
         const tmpFilePath = path.join(storeDir, tmpFileName)
 
         await fs.promises.writeFile(tmpFilePath, serialized, 'utf-8')
-        await fs.promises.rename(tmpFilePath, this.storagePath)
+        await retryAtomicRename(tmpFilePath, this.storagePath)
     }
 
     public async getRecords(): Promise<TaskHandoffEnvelope[]> {
