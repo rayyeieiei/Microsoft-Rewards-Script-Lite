@@ -7,7 +7,12 @@ export type AccountReadinessStatus =
     | 'auth-required'
     | 'manual-review-required'
     | 'technically-ready-for-handoff'
+    | 'technically-ready'
     | 'blocked'
+    | 'rate-limited'
+    | 'stale-evidence'
+    | 'awaiting-verification'
+    | 'present-unverified'
 
 export type SessionState =
     | 'missing'
@@ -15,6 +20,8 @@ export type SessionState =
     | 'expired'
     | 'interactive-required'
     | 'valid-from-existing-runtime-evidence'
+    | 'valid-from-server'
+    | 'expired-from-server'
     | 'unknown'
 
 export interface AccountReadinessResult {
@@ -35,7 +42,12 @@ export const AccountReadinessStatusSchema = z.enum([
     'auth-required',
     'manual-review-required',
     'technically-ready-for-handoff',
-    'blocked'
+    'technically-ready',
+    'blocked',
+    'rate-limited',
+    'stale-evidence',
+    'awaiting-verification',
+    'present-unverified'
 ])
 
 export const SessionStateSchema = z.enum([
@@ -44,6 +56,8 @@ export const SessionStateSchema = z.enum([
     'expired',
     'interactive-required',
     'valid-from-existing-runtime-evidence',
+    'valid-from-server',
+    'expired-from-server',
     'unknown'
 ])
 

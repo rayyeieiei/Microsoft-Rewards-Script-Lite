@@ -4,7 +4,12 @@ export type DashboardAccountStatus =
     | 'auth-required'
     | 'manual-review-required'
     | 'technically-ready-for-handoff'
+    | 'technically-ready'
     | 'blocked'
+    | 'rate-limited'
+    | 'stale-evidence'
+    | 'awaiting-verification'
+    | 'present-unverified'
 
 export interface DashboardSummaryDto {
     totalAccounts: number
@@ -36,6 +41,8 @@ export type DashboardSessionState =
     | 'unknown'
     | 'interactive-required'
     | 'valid-from-existing-runtime-evidence'
+    | 'valid-from-server'
+    | 'expired-from-server'
 
 export interface AccountReadinessPublicDto {
     publicRef: string

@@ -146,12 +146,17 @@ export class ReadinessDashboardAdapter {
                     manualReviewRequired++
                     break
                 case 'technically-ready-for-handoff':
+                case 'technically-ready':
                     technicallyReadyForHandoff++
                     break
                 case 'blocked':
+                case 'rate-limited':
                     blocked++
                     break
                 case 'unknown':
+                case 'stale-evidence':
+                case 'awaiting-verification':
+                case 'present-unverified':
                 default:
                     unknown++
                     break
