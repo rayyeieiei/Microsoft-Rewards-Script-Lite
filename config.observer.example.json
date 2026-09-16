@@ -1,0 +1,26 @@
+{
+    "contractVersion": 1,
+    "identitiesPath": "identities.json",
+    "storageDirectory": "data",
+    "sessionBasePath": "sessions",
+    "dashboard": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 4100,
+        "maxSseClients": 10,
+        "sseHeartbeatMs": 15000
+    },
+    "observationBridge": {
+        "enabled": true,
+        "bridgeDirectory": "bridge",
+        "pollIntervalMs": 5000,
+        "maximumFileBytes": 524288,
+        "maxIncomingFiles": 1000,
+        "maxBridgeDirectoryBytes": 52428800,
+        "processedRetentionHours": 24,
+        "rejectionMetadataRetentionHours": 72,
+        "claimingStaleMs": 60000
+    },
+    "staleEvidenceThresholdHours": 48,
+    "shutdownTimeoutMs": 10000
+}
