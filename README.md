@@ -1,13 +1,45 @@
-# Microsoft Rewards Script
+# Microsoft Rewards Script — Lite Local Observer Runtime
 
-[![Discord](https://img.shields.io/badge/Join%20Our%20Discord-5865F2?style=for-the-badge\&logo=discord\&logoColor=white)](https://discord.gg/8BxYbV4pkj)
-[![Latest Build](https://img.shields.io/github/actions/workflow/status/rayyeieiei/Microsoft-Rewards-Script/auto-release.yml?branch=v3\&style=for-the-badge\&label=Latest%20Build)](https://github.com/rayyeieiei/Microsoft-Rewards-Script/actions/workflows/auto-release.yml)
-[![Docker](https://img.shields.io/badge/Docker-GHCR-blue?style=for-the-badge\&logo=docker)](https://github.com/rayyeieiei/Microsoft-Rewards-Script/pkgs/container/microsoft-rewards-script)
+> [!IMPORTANT]
+> **Lite Version Architecture:**
+> `Microsoft-Rewards-Script-Lite` serves as a **local technical readiness observer and dashboard**.
+> - **Zero browser automation**: Does not launch Patchright, Chromium, or Edge.
+> - **Zero point claims**: Does not claim points, complete activities, or scrape Microsoft servers.
+> - **Zero outbound internet calls**: Strictly passive toward external Microsoft services; serves local loopback dashboard at `http://127.0.0.1:4100`.
+> - **Zero credential handling**: Observer reads `identities.json` containing only explicit UUIDs and safe display labels (no passwords, tokens, or cookies).
+> - **Bridge Intake**: Ingests sanitized observation snapshots exported from the Main execution engine via `bridge/incoming/`.
 
-> [!CAUTION]
-> V3.x does not support the new Bing Rewards interface!
->
-> Use at your own risk — some features may not work as expected.
+---
+
+## Quick Setup (Observer Runtime)
+
+### 1. Configure Observer & Identities
+```bash
+# Copy example observer configuration
+cp config.observer.example.json config.observer.json
+
+# Copy example identities file (add your account UUIDs; no passwords required)
+cp identities.example.json identities.json
+```
+
+### 2. Build and Start Observer
+```bash
+# Build TypeScript and copy dashboard assets
+npm run build
+
+# Start production observer runtime
+npm start
+
+# Or run in development mode directly via ts-node
+npm run dev
+```
+
+Open your browser at **`http://127.0.0.1:4100`** to access:
+- **Technical Readiness Dashboard**: View technical readiness status, session freshness, and ground-truth evidence.
+- **Manual Action Center**: Review tasks requiring manual interaction (puzzles, official app activities). Operators can mark actions as reported (`action-reported`) while awaiting server verification from Main.
+
+> [!NOTE]
+> Legacy automation runners remain accessible via `npm run start:legacy` and `npm run dev:legacy`.
 
 ---
 
