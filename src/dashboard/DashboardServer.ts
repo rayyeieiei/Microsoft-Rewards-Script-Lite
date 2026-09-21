@@ -3,15 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { URL } from 'url'
+import { z } from 'zod'
 import { ReadinessSnapshotStore } from './ReadinessSnapshotStore'
 import { sanitizeLogMessage } from '../util/Redaction'
 import { DashboardSnapshotDto } from './DashboardTypes'
 import { ManualActionStore } from '../manual/ManualActionStore'
-import {
-    ManualActionRecord,
-    ManualActionMutationPayloadSchema,
-    ConflictError
-} from '../manual/ManualActionTypes'
+import { ManualActionRecord, ManualActionMutationPayloadSchema, ConflictError } from '../manual/ManualActionTypes'
+import { ObserverCoordinator } from '../runtime/observer/ObserverCoordinator'
 
 export interface LiteDashboardConfig {
     enabled: boolean
@@ -25,6 +23,7 @@ export interface DashboardServerOptions {
     config: LiteDashboardConfig
     store: ReadinessSnapshotStore
     manualActionStore?: ManualActionStore
+    coordinator?: ObserverCoordinator
     publicDir?: string
     logFn?: (level: 'info' | 'warn' | 'error', message: string) => void
 }
@@ -39,12 +38,14 @@ export class DashboardServer {
     private readonly config: LiteDashboardConfig
     private readonly store: ReadinessSnapshotStore
     private readonly manualActionStore?: ManualActionStore
+    private readonly coordinator?: ObserverCoordinator
     private readonly publicDir: string
     private readonly logFn?: (level: 'info' | 'warn' | 'error', message: string) => void
 
     private server?: http.Server
     private sseClients = new Map<string, SseClient>()
     private csrfSessions = new Map<string, number>()
+    private controlRequestTimestamps = new Map<string, number[]>()
     private storeUnsubscribe?: () => void
     private isRunning = false
 
@@ -52,6 +53,7 @@ export class DashboardServer {
         this.config = options.config
         this.store = options.store
         this.manualActionStore = options.manualActionStore
+        this.coordinator = options.coordinator
         this.logFn = options.logFn
 
         // Injected publicDir (Amendment 8)
@@ -127,10 +129,7 @@ export class DashboardServer {
             return { valid: true }
         }
 
-        const allowedOrigins = [
-            `http://127.0.0.1:${this.config.port}`,
-            `http://localhost:${this.config.port}`
-        ]
+        const allowedOrigins = [`http://127.0.0.1:${this.config.port}`, `http://localhost:${this.config.port}`]
 
         if (allowedOrigins.includes(originHeader.trim().toLowerCase())) {
             return { valid: true, origin: originHeader.trim() }
@@ -179,7 +178,10 @@ export class DashboardServer {
 
             this.server.once('error', (err: any) => {
                 if (err.code === 'EADDRINUSE') {
-                    this.log('error', `[DASHBOARD-PORT] Port ${this.config.port} is already in use. Dashboard disabled on this run.`)
+                    this.log(
+                        'error',
+                        `[DASHBOARD-PORT] Port ${this.config.port} is already in use. Dashboard disabled on this run.`
+                    )
                     this.isRunning = false
                     resolve() // Do not crash cluster, proceed gracefully
                 } else {
@@ -189,7 +191,10 @@ export class DashboardServer {
 
             this.server.listen(this.config.port, this.config.host, () => {
                 this.isRunning = true
-                this.log('info', `[DASHBOARD-START] Local technical readiness dashboard listening at http://${this.config.host}:${this.config.port}`)
+                this.log(
+                    'info',
+                    `[DASHBOARD-START] Local technical readiness dashboard listening at http://${this.config.host}:${this.config.port}`
+                )
                 resolve()
             })
         })
@@ -238,9 +243,7 @@ export class DashboardServer {
 
         // 5. Route dispatch
         // A. Mutating manual action endpoints (Amendment 10)
-        const mutationMatch = pathname.match(
-            /^\/api\/manual-actions\/([0-9a-f-]+)\/(report|dismiss|reopen)$/i
-        )
+        const mutationMatch = pathname.match(/^\/api\/manual-actions\/([0-9a-f-]+)\/(report|dismiss|reopen)$/i)
         if (mutationMatch) {
             if (req.method !== 'POST') {
                 res.setHeader('Allow', 'POST')
@@ -276,7 +279,21 @@ export class DashboardServer {
             return
         }
 
-        // D. Existing GET-only endpoints
+        // D. Operational control endpoints (Amendment - Operational Controls)
+        const controlMatch = pathname.match(/^\/api\/control(?:\/(recheck|pause|resume))?$/i)
+        if (controlMatch) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST')
+                res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
+                res.end('Method Not Allowed')
+                return
+            }
+            const explicitAction = controlMatch[1] ? controlMatch[1].toLowerCase() : undefined
+            this.handleControlOperation(req, res, explicitAction)
+            return
+        }
+
+        // E. Existing GET-only endpoints
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET')
             res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' })
@@ -374,23 +391,33 @@ export class DashboardServer {
         return new Promise((resolve, reject) => {
             let body = ''
             let received = 0
-            req.on('data', chunk => {
-                received += chunk.length
+            let rejected = false
+
+            const onData = (chunk: Buffer | string) => {
+                if (rejected) return
+                received += Buffer.byteLength(chunk)
                 if (received > maxBytes) {
-                    req.destroy()
+                    rejected = true
+                    req.removeListener('data', onData)
+                    req.resume()
                     reject(new Error('Payload Too Large'))
                     return
                 }
-                body += chunk
-            })
+                body += chunk.toString()
+            }
+
+            req.on('data', onData)
             req.on('end', () => {
+                if (rejected) return
                 try {
                     resolve(JSON.parse(body || '{}'))
                 } catch (err: any) {
                     reject(new Error(`Invalid JSON syntax: ${err.message}`))
                 }
             })
-            req.on('error', err => reject(err))
+            req.on('error', err => {
+                if (!rejected) reject(err)
+            })
         })
     }
 
@@ -450,6 +477,12 @@ export class DashboardServer {
         try {
             payloadJson = await this.parseJsonBody(req, 16384)
         } catch (err: any) {
+            if (err.message === 'Payload Too Large') {
+                res.setHeader('Connection', 'close')
+                res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: 'Payload Too Large' }))
+                return
+            }
             res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
             res.end(JSON.stringify({ error: err.message }))
             return
@@ -487,6 +520,146 @@ export class DashboardServer {
                 res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
                 res.end(JSON.stringify({ error: 'Internal server error' }))
             }
+        }
+    }
+
+    private async handleControlOperation(
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        explicitAction?: string
+    ): Promise<void> {
+        // 1. Rate Limiting check (max 5 requests per second per IP)
+        const clientIp = this.normalizeIp(req.socket.remoteAddress) || '127.0.0.1'
+        const now = Date.now()
+        const history = this.controlRequestTimestamps.get(clientIp) || []
+        const recent = history.filter(ts => now - ts < 1000)
+        if (recent.length >= 5) {
+            res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(
+                JSON.stringify({
+                    error: 'Too Many Requests: Permintaan kontrol melebihi batas frekuensi (maks 5 request per detik)'
+                })
+            )
+            return
+        }
+        recent.push(now)
+        this.controlRequestTimestamps.set(clientIp, recent)
+
+        // 2. CSRF Token Validation
+        if (!this.validateCsrfToken(req, res)) {
+            return
+        }
+
+        // 3. Coordinator Availability Check
+        if (!this.coordinator) {
+            res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(JSON.stringify({ error: 'ObserverCoordinator tidak tersedia atau belum dikonfigurasi' }))
+            return
+        }
+
+        // 4. Resolve and Validate Action
+        let action = explicitAction
+        if (!action) {
+            const contentType = req.headers['content-type'] || ''
+            if (!contentType.includes('application/json')) {
+                res.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: 'Unsupported Media Type: expected application/json' }))
+                return
+            }
+
+            let payloadJson: unknown
+            try {
+                payloadJson = await this.parseJsonBody(req, 4096)
+            } catch (err: any) {
+                if (err.message === 'Payload Too Large') {
+                    res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' })
+                    res.end(JSON.stringify({ error: 'Payload Too Large: Maksimal ukuran body adalah 4KB' }))
+                    return
+                }
+                res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: `Invalid JSON: ${err.message}` }))
+                return
+            }
+
+            const ControlPayloadSchema = z
+                .object({
+                    action: z.enum(['recheck', 'pause', 'resume'])
+                })
+                .strict()
+
+            const parseResult = ControlPayloadSchema.safeParse(payloadJson)
+            if (!parseResult.success) {
+                res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(
+                    JSON.stringify({
+                        error: `Validasi gagal: ${parseResult.error.issues.map(i => i.message).join(', ')}`
+                    })
+                )
+                return
+            }
+            action = parseResult.data.action
+        } else {
+            // Validate explicit action string
+            if (!['recheck', 'pause', 'resume'].includes(action)) {
+                res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: `Action '${action}' tidak valid. Pilihan: recheck, pause, resume` }))
+                return
+            }
+        }
+
+        // 5. Execute Action via Coordinator
+        if (action === 'recheck') {
+            try {
+                const result = this.coordinator.triggerCheck('manual')
+                // Immediate HTTP 202 Accepted response (Rule 4)
+                res.writeHead(202, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(
+                    JSON.stringify({
+                        success: true,
+                        action: 'recheck',
+                        checkId: result.checkId,
+                        checkingState: result.checkingState,
+                        alreadyRunning: result.alreadyRunning,
+                        message: result.alreadyRunning
+                            ? 'Pemeriksaan sedang aktif; permintaan digabungkan (coalesced).'
+                            : 'Pemeriksaan bukti data lokal telah dimulai.'
+                    })
+                )
+            } catch (err: any) {
+                res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({ error: err.message }))
+            }
+            return
+        }
+
+        if (action === 'pause') {
+            const status = this.coordinator.pause()
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(
+                JSON.stringify({
+                    success: true,
+                    action: 'pause',
+                    monitoring: status,
+                    message: status.pendingPause
+                        ? 'Menjeda setelah pemeriksaan selesai.'
+                        : 'Pemantauan berkala berhasil dijeda.'
+                })
+            )
+            return
+        }
+
+        if (action === 'resume') {
+            const status = this.coordinator.resume()
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+            res.end(
+                JSON.stringify({
+                    success: true,
+                    action: 'resume',
+                    monitoring: status,
+                    message: 'Pemantauan berkala berhasil dilanjutkan.'
+                })
+            )
+            return
         }
     }
 
@@ -538,7 +711,7 @@ export class DashboardServer {
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache, no-transform',
-            'Connection': 'keep-alive',
+            Connection: 'keep-alive',
             'X-Accel-Buffering': 'no'
         })
 

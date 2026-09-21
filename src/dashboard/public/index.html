@@ -1,242 +1,382 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Microsoft Rewards Lite — Technical Readiness</title>
-    <link rel="stylesheet" href="/assets/styles.css">
-</head>
-<body>
-    <header class="app-header">
-        <div class="header-container">
-            <div class="brand">
-                <span class="brand-subtitle">Microsoft Rewards Lite</span>
-                <h1 class="brand-title">Account Onboarding &amp; Technical Readiness</h1>
+<!doctype html>
+<html lang="id">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Microsoft Rewards Lite — Kesiapan Teknis Akun</title>
+        <link rel="stylesheet" href="/assets/styles.css" />
+    </head>
+    <body>
+        <header class="app-header">
+            <div class="header-container">
+                <div class="brand">
+                    <span class="brand-subtitle">Microsoft Rewards Lite</span>
+                    <h1 class="brand-title">Kesiapan Teknis &amp; Onboarding Akun</h1>
+                </div>
+                <div class="header-status" aria-label="Status Sistem">
+                    <span id="runtime-status-badge" class="badge badge-teal" title="Status proses runtime observer"
+                        >Observer: Memulai...</span
+                    >
+                    <span id="monitoring-status-badge" class="badge badge-teal" title="Status penjadwalan pemantauan"
+                        >Pemantauan: Memuat...</span
+                    >
+                    <span id="datasource-status-badge" class="badge badge-blue" title="Status pemuatan sumber data akun"
+                        >Akun: Membaca...</span
+                    >
+                    <span
+                        id="connection-status-badge"
+                        class="badge badge-gray"
+                        title="Status koneksi frontend ke dashboard"
+                        >Koneksi: Menghubungkan...</span
+                    >
+                    <span
+                        id="sse-indicator"
+                        class="live-dot"
+                        title="Koneksi SSE Aktif"
+                        aria-label="Indikator koneksi live"
+                    ></span>
+                </div>
             </div>
-            <div class="header-status">
-                <span id="runtime-status-badge" class="badge badge-teal">Runtime: Active</span>
-                <span id="sse-indicator" class="live-dot" title="Live SSE Connected" aria-label="Live updates active"></span>
+        </header>
+
+        <main class="app-main">
+            <!-- Observer Mode & Information Panel -->
+            <section class="mode-panel" aria-label="Informasi Observer">
+                <div class="mode-info">
+                    <div class="mode-tag-wrapper">
+                        <span class="mode-badge">Observer lokal</span>
+                        <span id="env-mode-badge" class="badge badge-teal">Mode: Normal</span>
+                        <span class="mode-desc"
+                            >Memantau konfigurasi dan status lokal. Tidak menjalankan aktivitas perolehan poin.</span
+                        >
+                    </div>
+                    <div class="mode-meta">
+                        <span class="meta-item">Sumber: <strong id="data-source-file">accounts.json</strong></span>
+                        <span class="meta-item">Terakhir Diperiksa: <strong id="time-last-checked">—</strong></span>
+                        <span class="meta-item">Jadwal Berikutnya: <strong id="time-next-check">—</strong></span>
+                        <span class="meta-item">Snapshot Terakhir: <strong id="time-snapshot">—</strong></span>
+                        <span class="meta-item">Bridge Intake: <strong id="bridge-status-text">—</strong> (<span id="bridge-counts">0 file</span>)</span>
+                        <span id="checking-indicator" class="badge badge-amber hidden">Memeriksa data lokal...</span>
+                        <span id="metric-rejected" class="badge badge-red hidden">0 Ditolak</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Contextual Alert & Guidance Banner -->
+            <div id="guidance-banner" class="alert-banner hidden" role="alert">
+                <div class="alert-content">
+                    <strong id="alert-title" class="alert-title">Pemberitahuan</strong>
+                    <p id="alert-message" class="alert-message"></p>
+                    <div id="alert-remediation" class="alert-remediation hidden"></div>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="nav-tabs" aria-label="Navigasi Dashboard">
+                <button id="tab-readiness" class="tab-btn active" type="button" aria-selected="true">
+                    Kesiapan Teknis
+                </button>
+                <button id="tab-manual" class="tab-btn" type="button" aria-selected="false">
+                    Pusat Tindakan Manual
+                </button>
+            </nav>
+
+            <!-- Technical Readiness View -->
+            <div id="view-readiness">
+                <!-- Prominent Disclaimer -->
+                <section class="disclaimer-banner" role="region" aria-label="Peringatan Teknis">
+                    <p>
+                        <strong>Pemberitahuan:</strong> Hanya menampilkan kesiapan teknis. Dashboard ini bukan alat
+                        klaim poin dan tidak memprediksi penegakan anti-ban Microsoft.
+                    </p>
+                </section>
+
+                <!-- Summary Metric Cards -->
+                <section class="summary-grid" aria-label="Ringkasan Status Akun">
+                    <div class="card metric-card">
+                        <span class="metric-label">Total Akun Diterima</span>
+                        <span class="metric-value" id="metric-total">0</span>
+                    </div>
+                    <div class="card metric-card metric-teal">
+                        <span class="metric-label">Siap Handoff</span>
+                        <span class="metric-value" id="metric-ready">0</span>
+                    </div>
+                    <div class="card metric-card metric-blue">
+                        <span class="metric-label">Perlu Autentikasi</span>
+                        <span class="metric-value" id="metric-auth">0</span>
+                    </div>
+                    <div class="card metric-card metric-purple">
+                        <span class="metric-label">Tindakan Manual</span>
+                        <span class="metric-value" id="metric-manual">0</span>
+                    </div>
+                    <div class="card metric-card metric-amber">
+                        <span class="metric-label">Belum Dinilai / Siap</span>
+                        <span class="metric-value" id="metric-notready">0</span>
+                    </div>
+                    <div class="card metric-card metric-red">
+                        <span class="metric-label">Dibatasi / Blokir</span>
+                        <span class="metric-value" id="metric-blocked">0</span>
+                    </div>
+                </section>
+
+                <!-- Quick Start Steps Guide -->
+                <section class="quickstart-box" aria-label="Panduan Memulai">
+                    <div class="quickstart-header">
+                        <span class="quickstart-title">Panduan Menjalankan Observer:</span>
+                        <span class="quickstart-note">Perubahan file konfigurasi memerlukan restart observer.</span>
+                    </div>
+                    <ol class="quickstart-steps">
+                        <li>
+                            Sumber aktif: <code id="quickstart-source-file">accounts.json</code>. Perubahan
+                            konfigurasi/akun memerlukan restart observer.
+                        </li>
+                        <li>
+                            Gunakan tombol <strong>Periksa Ulang Akun</strong> untuk mengevaluasi ulang bukti lokal
+                            (sesi dan observasi tersimpan).
+                        </li>
+                        <li>
+                            Gunakan <strong>Jeda Pemantauan</strong> untuk menghentikan penjadwalan pemeriksaan berkala
+                            berikutnya.
+                        </li>
+                        <li>Tinjau kesiapan teknis akun dan lakukan tindakan berikutnya yang disarankan.</li>
+                    </ol>
+                </section>
+
+                <!-- Controls Toolbar -->
+                <section class="toolbar" aria-label="Filter dan Kontrol Operasional">
+                    <div class="search-box">
+                        <label for="search-input" class="sr-only">Cari akun</label>
+                        <input type="text" id="search-input" placeholder="Cari akun..." autocomplete="off" />
+                    </div>
+                    <div class="filter-controls">
+                        <label for="status-filter" class="sr-only">Filter status</label>
+                        <select id="status-filter">
+                            <option value="all">Semua Status Kesiapan</option>
+                            <option value="technically-ready-for-handoff">Siap untuk Handoff</option>
+                            <option value="auth-required">Perlu Autentikasi</option>
+                            <option value="manual-review-required">Perlu Tindakan Manual</option>
+                            <option value="not-ready">Belum Siap</option>
+                            <option value="blocked">Dibatasi / Diblokir</option>
+                            <option value="unknown">Belum Dinilai (Unknown)</option>
+                        </select>
+
+                        <label for="sort-by" class="sr-only">Urutan akun</label>
+                        <select id="sort-by">
+                            <option value="lastObserved">Urutkan: Cek Terkini</option>
+                            <option value="displayAccount">Urutkan: Akun (A-Z)</option>
+                            <option value="status">Urutkan: Status</option>
+                        </select>
+
+                        <span id="accounts-count-info" class="count-info">Menampilkan 0 dari 0 akun</span>
+
+                        <button
+                            id="btn-recheck"
+                            class="btn btn-primary"
+                            type="button"
+                            title="Menjalankan satu pemeriksaan ulang bukti lokal untuk akun yang dimuat"
+                        >
+                            Periksa Ulang Akun
+                        </button>
+                        <button
+                            id="btn-toggle-monitoring"
+                            class="btn btn-secondary"
+                            type="button"
+                            title="Menghentikan atau melanjutkan penjadwalan pemantauan berkala"
+                        >
+                            Jeda Pemantauan
+                        </button>
+                        <button
+                            id="btn-refresh"
+                            class="btn btn-secondary"
+                            type="button"
+                            title="Mengambil snapshot terbaru dari API lokal"
+                        >
+                            Perbarui Tampilan
+                        </button>
+                        <a href="/api/diagnostics/export" class="btn btn-secondary" download="lite-diagnostics.json"
+                            >Ekspor Diagnostik</a
+                        >
+                    </div>
+                </section>
+
+                <!-- Accounts Table -->
+                <section class="table-container" aria-label="Tabel Akun">
+                    <table class="data-table" id="accounts-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Akun</th>
+                                <th scope="col">Status Teknis</th>
+                                <th scope="col">Sesi</th>
+                                <th scope="col">Bukti Observasi</th>
+                                <th scope="col">Task Tertunda</th>
+                                <th scope="col">Poin Teriklan</th>
+                                <th scope="col">Pengecekan Terakhir</th>
+                                <th scope="col">Tindakan Berikutnya</th>
+                                <th scope="col">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="accounts-tbody">
+                            <!-- Populated dynamically via textContent and DOM methods -->
+                        </tbody>
+                    </table>
+                    <div id="empty-state" class="empty-state hidden">
+                        <p id="empty-state-message">Sedang membaca data akun...</p>
+                        <button
+                            id="btn-reset-filter"
+                            class="btn btn-secondary hidden"
+                            type="button"
+                            style="margin-top: 0.75rem"
+                        >
+                            Reset Filter
+                        </button>
+                        <div id="empty-state-guide" class="empty-guide hidden"></div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Manual Action Center View -->
+            <div id="view-manual" class="hidden">
+                <section class="disclaimer-banner" role="region" aria-label="Peringatan Pusat Tindakan Manual">
+                    <p>
+                        <strong>Pusat Tindakan Manual:</strong> Observasi diimpor dari Main runtime. Tindakan yang
+                        dilaporkan operator berstatus <em>unverified</em> sampai observasi Main membuktikan penyelesaian
+                        di server Microsoft.
+                    </p>
+                </section>
+
+                <section class="toolbar" aria-label="Filter Task Manual">
+                    <div class="search-box">
+                        <label for="manual-search-input" class="sr-only">Cari judul task manual</label>
+                        <input
+                            type="text"
+                            id="manual-search-input"
+                            placeholder="Cari task manual..."
+                            autocomplete="off"
+                        />
+                    </div>
+                    <div class="filter-controls">
+                        <label for="manual-lifecycle-filter" class="sr-only">Filter lifecycle</label>
+                        <select id="manual-lifecycle-filter">
+                            <option value="all">Semua Status Siklus</option>
+                            <option value="available">Tersedia (Available)</option>
+                            <option value="in-progress">Sedang Dikerjakan</option>
+                            <option value="action-reported">Tindakan Dilaporkan</option>
+                            <option value="dismissed">Dilewati (Dismissed)</option>
+                            <option value="expired">Kedaluwarsa</option>
+                        </select>
+
+                        <label for="manual-verification-filter" class="sr-only">Filter verifikasi</label>
+                        <select id="manual-verification-filter">
+                            <option value="all">Semua Status Verifikasi</option>
+                            <option value="unverified">Belum Diverifikasi Server</option>
+                            <option value="verification-pending">Menunggu Verifikasi</option>
+                            <option value="verified-complete">Terverifikasi Selesai</option>
+                            <option value="verification-failed">Verifikasi Gagal</option>
+                        </select>
+
+                        <button id="btn-manual-refresh" class="btn btn-secondary" type="button">Perbarui Task</button>
+                    </div>
+                </section>
+
+                <section class="table-container" aria-label="Tabel Task Manual">
+                    <table class="data-table" id="manual-actions-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Akun</th>
+                                <th scope="col">Judul Task</th>
+                                <th scope="col">Jenis</th>
+                                <th scope="col">Poin Teriklan</th>
+                                <th scope="col">Status Siklus</th>
+                                <th scope="col">Status Verifikasi</th>
+                                <th scope="col">Terakhir Diobservasi</th>
+                                <th scope="col">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="manual-actions-tbody">
+                            <!-- Populated dynamically via DOM APIs -->
+                        </tbody>
+                    </table>
+                    <div id="manual-empty-state" class="empty-state hidden">
+                        <p>Tidak ada task manual yang cocok dengan kriteria.</p>
+                    </div>
+                </section>
+
+                <div class="pagination-bar" id="manual-pagination">
+                    <button id="btn-manual-prev" class="btn btn-secondary" type="button" disabled>Sebelumnya</button>
+                    <span id="manual-page-info" class="pagination-info">Menampilkan rekaman aktif</span>
+                    <button id="btn-manual-next" class="btn btn-secondary" type="button" disabled>Berikutnya</button>
+                </div>
+            </div>
+
+            <!-- Accessible Live Status Region -->
+            <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+        </main>
+
+        <!-- Detail Drawer / Accessible Modal -->
+        <div
+            id="detail-modal"
+            class="modal-backdrop hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-account-title"
+        >
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <div>
+                        <span class="modal-subtitle">Detail Kesiapan Teknis</span>
+                        <h2 id="modal-account-title" class="modal-title">Detail Akun</h2>
+                    </div>
+                    <button id="btn-close-modal" class="btn-close" aria-label="Tutup detail">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Populated dynamically via DOM APIs -->
+                </div>
+                <div class="modal-footer">
+                    <span class="modal-disclaimer">Hanya estimasi server — bukan jaminan perolehan poin</span>
+                    <button id="btn-modal-done" class="btn btn-primary" type="button">Tutup</button>
+                </div>
             </div>
         </div>
-    </header>
 
-    <main class="app-main">
-        <!-- Navigation Tabs -->
-        <nav class="nav-tabs" aria-label="Dashboard Navigation">
-            <button id="tab-readiness" class="tab-btn active" type="button" aria-selected="true">Technical Readiness</button>
-            <button id="tab-manual" class="tab-btn" type="button" aria-selected="false">Manual Action Center</button>
-        </nav>
-
-        <!-- Technical Readiness View -->
-        <div id="view-readiness">
-            <!-- Prominent Disclaimer -->
-            <section class="disclaimer-banner" role="region" aria-label="Disclaimer">
-                <p>
-                    <strong>Notice:</strong> Technical readiness only. This dashboard does not predict account safety or enforcement decisions.
-                </p>
-            </section>
-
-            <!-- Summary Metric Cards -->
-            <section class="summary-grid" aria-label="Account Status Overview">
-                <div class="card metric-card">
-                    <span class="metric-label">Total Accounts</span>
-                    <span class="metric-value" id="metric-total">0</span>
+        <!-- Report Action Modal -->
+        <div
+            id="report-modal"
+            class="modal-backdrop hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-modal-title"
+        >
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <div>
+                        <span class="modal-subtitle">Pusat Tindakan Manual</span>
+                        <h2 id="report-modal-title" class="modal-title">Lapor Tindakan Selesai</h2>
+                    </div>
+                    <button id="btn-close-report-modal" class="btn-close" aria-label="Tutup dialog">&times;</button>
                 </div>
-                <div class="card metric-card metric-teal">
-                    <span class="metric-label">Ready for Handoff</span>
-                    <span class="metric-value" id="metric-ready">0</span>
+                <div class="modal-body">
+                    <p id="report-modal-task-title" class="report-task-display"></p>
+                    <p class="modal-disclaimer">
+                        Melaporkan tindakan akan menandai task sebagai <em>action-reported</em> (unverified). Status
+                        akan tetap unverified sampai observasi Main membuktikan penyelesaian di server Microsoft.
+                    </p>
+                    <div class="form-group">
+                        <label for="report-note-input">Catatan Opsional (maks 200 karakter):</label>
+                        <textarea
+                            id="report-note-input"
+                            maxlength="200"
+                            rows="3"
+                            placeholder="Contoh: Telah melakukan pencarian manual di Edge"
+                        ></textarea>
+                    </div>
                 </div>
-                <div class="card metric-card metric-blue">
-                    <span class="metric-label">Auth Required</span>
-                    <span class="metric-value" id="metric-auth">0</span>
+                <div class="modal-footer">
+                    <button id="btn-cancel-report" class="btn btn-secondary" type="button">Batal</button>
+                    <button id="btn-submit-report" class="btn btn-primary" type="button">Kirim Laporan</button>
                 </div>
-                <div class="card metric-card metric-purple">
-                    <span class="metric-label">Manual Review</span>
-                    <span class="metric-value" id="metric-manual">0</span>
-                </div>
-                <div class="card metric-card metric-amber">
-                    <span class="metric-label">Not Ready</span>
-                    <span class="metric-value" id="metric-notready">0</span>
-                </div>
-                <div class="card metric-card metric-red">
-                    <span class="metric-label">Blocked</span>
-                    <span class="metric-value" id="metric-blocked">0</span>
-                </div>
-            </section>
-
-            <!-- Controls Toolbar -->
-            <section class="toolbar" aria-label="Filters and Controls">
-                <div class="search-box">
-                    <label for="search-input" class="sr-only">Search by account</label>
-                    <input type="text" id="search-input" placeholder="Search by redacted account..." autocomplete="off">
-                </div>
-                <div class="filter-controls">
-                    <label for="status-filter" class="sr-only">Filter by status</label>
-                    <select id="status-filter">
-                        <option value="all">All Technical Statuses</option>
-                        <option value="technically-ready-for-handoff">Technically Ready for Handoff</option>
-                        <option value="auth-required">Authentication Required</option>
-                        <option value="manual-review-required">Manual Review Required</option>
-                        <option value="not-ready">Not Ready</option>
-                        <option value="blocked">Blocked</option>
-                        <option value="unknown">Unknown</option>
-                    </select>
-
-                    <label for="sort-by" class="sr-only">Sort accounts</label>
-                    <select id="sort-by">
-                        <option value="lastObserved">Sort by Last Check (Newest)</option>
-                        <option value="displayAccount">Sort by Account (A-Z)</option>
-                        <option value="status">Sort by Status</option>
-                    </select>
-
-                    <button id="btn-refresh" class="btn btn-secondary" type="button">Refresh View</button>
-                    <a href="/api/diagnostics/export" class="btn btn-secondary" download="lite-diagnostics.json">Export Diagnostics</a>
-                </div>
-            </section>
-
-            <!-- Accounts Table -->
-            <section class="table-container" aria-label="Accounts Table">
-                <table class="data-table" id="accounts-table">
-                    <thead>
-                        <tr>
-                            <th scope="col">Account</th>
-                            <th scope="col">Technical Status</th>
-                            <th scope="col">Session</th>
-                            <th scope="col">Pending Tasks</th>
-                            <th scope="col">Advertised Points</th>
-                            <th scope="col">Last Check</th>
-                            <th scope="col">Next Action</th>
-                            <th scope="col">Details</th>
-                        </tr>
-                    </thead>
-                    <tbody id="accounts-tbody">
-                        <!-- Populated dynamically via textContent and DOM methods -->
-                    </tbody>
-                </table>
-                <div id="empty-state" class="empty-state hidden">
-                    <p>No accounts match the selected criteria or no accounts loaded.</p>
-                </div>
-            </section>
-        </div>
-
-        <!-- Manual Action Center View -->
-        <div id="view-manual" class="hidden">
-            <section class="disclaimer-banner" role="region" aria-label="Manual Action Disclaimer">
-                <p>
-                    <strong>Manual Action Center:</strong> Observations imported from Main runtime. User-reported actions remain unverified until exact Main observation proves server completion.
-                </p>
-            </section>
-
-            <section class="toolbar" aria-label="Manual Task Filters">
-                <div class="search-box">
-                    <label for="manual-search-input" class="sr-only">Search manual tasks by title</label>
-                    <input type="text" id="manual-search-input" placeholder="Search manual tasks by title..." autocomplete="off">
-                </div>
-                <div class="filter-controls">
-                    <label for="manual-lifecycle-filter" class="sr-only">Filter by lifecycle</label>
-                    <select id="manual-lifecycle-filter">
-                        <option value="all">All Lifecycle States</option>
-                        <option value="available">Available</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="action-reported">Action Reported</option>
-                        <option value="dismissed">Dismissed</option>
-                        <option value="expired">Expired</option>
-                    </select>
-
-                    <label for="manual-verification-filter" class="sr-only">Filter by verification</label>
-                    <select id="manual-verification-filter">
-                        <option value="all">All Verification States</option>
-                        <option value="unverified">Unverified</option>
-                        <option value="verification-pending">Verification Pending</option>
-                        <option value="verified-complete">Verified Complete</option>
-                        <option value="verification-failed">Verification Failed</option>
-                    </select>
-
-                    <button id="btn-manual-refresh" class="btn btn-secondary" type="button">Refresh Actions</button>
-                </div>
-            </section>
-
-            <section class="table-container" aria-label="Manual Actions Table">
-                <table class="data-table" id="manual-actions-table">
-                    <thead>
-                        <tr>
-                            <th scope="col">Account</th>
-                            <th scope="col">Task Title</th>
-                            <th scope="col">Kind</th>
-                            <th scope="col">Advertised Points</th>
-                            <th scope="col">Lifecycle State</th>
-                            <th scope="col">Verification State</th>
-                            <th scope="col">Last Observed</th>
-                            <th scope="col">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="manual-actions-tbody">
-                        <!-- Populated dynamically via DOM APIs -->
-                    </tbody>
-                </table>
-                <div id="manual-empty-state" class="empty-state hidden">
-                    <p>No manual actions found matching criteria.</p>
-                </div>
-            </section>
-
-            <div class="pagination-bar" id="manual-pagination">
-                <button id="btn-manual-prev" class="btn btn-secondary" type="button" disabled>Previous</button>
-                <span id="manual-page-info" class="pagination-info">Showing active records</span>
-                <button id="btn-manual-next" class="btn btn-secondary" type="button" disabled>Next</button>
             </div>
         </div>
 
-        <!-- Accessible Live Status Region -->
-        <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-    </main>
-
-    <!-- Detail Drawer / Accessible Modal -->
-    <div id="detail-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-account-title">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <div>
-                    <span class="modal-subtitle">Technical Readiness Detail</span>
-                    <h2 id="modal-account-title" class="modal-title">Account Details</h2>
-                </div>
-                <button id="btn-close-modal" class="btn-close" aria-label="Close details">&times;</button>
-            </div>
-            <div class="modal-body" id="modal-body">
-                <!-- Populated dynamically via DOM APIs -->
-            </div>
-            <div class="modal-footer">
-                <span class="modal-disclaimer">Server-advertised only — not earned or guaranteed</span>
-                <button id="btn-modal-done" class="btn btn-primary" type="button">Close</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Report Action Modal -->
-    <div id="report-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <div>
-                    <span class="modal-subtitle">Manual Action Center</span>
-                    <h2 id="report-modal-title" class="modal-title">Report Action Completed</h2>
-                </div>
-                <button id="btn-close-report-modal" class="btn-close" aria-label="Close report dialog">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p id="report-modal-task-title" class="report-task-display"></p>
-                <p class="modal-disclaimer">
-                    Reporting marks the task as <em>action-reported</em> (unverified). It will remain unverified until the next Main observation proves completion.
-                </p>
-                <div class="form-group">
-                    <label for="report-note-input">Optional Note (max 200 chars):</label>
-                    <textarea id="report-note-input" maxlength="200" rows="3" placeholder="e.g. Completed manual search on Edge browser"></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="btn-cancel-report" class="btn btn-secondary" type="button">Cancel</button>
-                <button id="btn-submit-report" class="btn btn-primary" type="button">Submit Report</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="/assets/app.js"></script>
-</body>
+        <script src="/assets/app.js"></script>
+    </body>
 </html>

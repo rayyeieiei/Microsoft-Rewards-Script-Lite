@@ -23,10 +23,7 @@ export class ManualActionStore {
     private isInitialized = false
 
     constructor(options: ManualActionStoreOptions | string) {
-        const resolvedOptions =
-            typeof options === 'string'
-                ? { storePath: options }
-                : options
+        const resolvedOptions = typeof options === 'string' ? { storePath: options } : options
 
         if (cluster.isWorker && !resolvedOptions.allowInWorkerForTesting) {
             throw new Error('[SECURITY] ManualActionStore must only run in the cluster primary process')
@@ -72,10 +69,7 @@ export class ManualActionStore {
             this.isInitialized = true
         } catch (err: any) {
             // Store file corrupted! Quarantine corrupted file (Amendment 11)
-            const corruptedPath = path.join(
-                path.dirname(this.storePath),
-                `manual_actions.corrupted.${Date.now()}.json`
-            )
+            const corruptedPath = path.join(path.dirname(this.storePath), `manual_actions.corrupted.${Date.now()}.json`)
             try {
                 await fs.promises.rename(this.storePath, corruptedPath)
             } catch {}
@@ -159,10 +153,7 @@ export class ManualActionStore {
         await this.save()
     }
 
-    public async reportAction(
-        recordId: string,
-        payload: ManualActionMutationPayload
-    ): Promise<ManualActionRecord> {
+    public async reportAction(recordId: string, payload: ManualActionMutationPayload): Promise<ManualActionRecord> {
         const record = this.records.get(recordId)
         if (!record) {
             throw new Error(`Record not found: ${recordId}`)
@@ -189,10 +180,7 @@ export class ManualActionStore {
         return JSON.parse(JSON.stringify(record))
     }
 
-    public async dismissAction(
-        recordId: string,
-        payload: ManualActionMutationPayload
-    ): Promise<ManualActionRecord> {
+    public async dismissAction(recordId: string, payload: ManualActionMutationPayload): Promise<ManualActionRecord> {
         const record = this.records.get(recordId)
         if (!record) {
             throw new Error(`Record not found: ${recordId}`)
@@ -214,10 +202,7 @@ export class ManualActionStore {
         return JSON.parse(JSON.stringify(record))
     }
 
-    public async reopenAction(
-        recordId: string,
-        payload: ManualActionMutationPayload
-    ): Promise<ManualActionRecord> {
+    public async reopenAction(recordId: string, payload: ManualActionMutationPayload): Promise<ManualActionRecord> {
         const record = this.records.get(recordId)
         if (!record) {
             throw new Error(`Record not found: ${recordId}`)

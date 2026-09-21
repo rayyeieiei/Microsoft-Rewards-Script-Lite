@@ -1,6 +1,13 @@
+import crypto from 'crypto'
 import { AccountReadinessResult } from '../readiness/AccountReadinessTypes'
 import { TaskHandoffEnvelope } from '../contracts/ExecutionContract'
-import { AccountReadinessPublicDto, DashboardSnapshotDto } from './DashboardTypes'
+import {
+    AccountReadinessPublicDto,
+    DashboardSnapshotDto,
+    DataSourceStatusDto,
+    MonitoringStatusDto,
+    BridgeDiagnosticsDto
+} from './DashboardTypes'
 import { ReadinessDashboardAdapter } from './ReadinessDashboardAdapter'
 
 export interface ReadinessSnapshotStoreOptions {
@@ -8,6 +15,8 @@ export interface ReadinessSnapshotStoreOptions {
     now: () => number
     sessionSecret?: string
     runtimeStartTime?: number
+    runtimeId?: string
+    initialRuntimeStatus?: 'starting' | 'running' | 'degraded' | 'stopping'
 }
 
 export class ReadinessSnapshotStore {
@@ -15,6 +24,23 @@ export class ReadinessSnapshotStore {
     private readonly now: () => number
     private readonly adapter: ReadinessDashboardAdapter
     private readonly runtimeStartTime: number
+    private readonly runtimeId: string
+
+    private revision = 0
+    private runtimeStatus: 'starting' | 'running' | 'degraded' | 'stopping' = 'running'
+    private dataSourceStatus: DataSourceStatusDto = {
+        status: 'loading',
+        sourceFile: 'accounts.json',
+        environmentMode: 'normal',
+        acceptedCount: 0,
+        rejectedCount: 0,
+        rejectionReasons: []
+    }
+    private monitoringStatus: MonitoringStatusDto = {
+        monitoringState: 'running',
+        checkingState: 'idle'
+    }
+    private bridgeDiagnostics?: BridgeDiagnosticsDto
 
     private accountDtos = new Map<string, AccountReadinessPublicDto>() // publicRef -> DTO
     private accountIdToPublicRef = new Map<string, string>() // internal accountId -> publicRef
@@ -28,10 +54,67 @@ export class ReadinessSnapshotStore {
         this.now = options.now || (() => Date.now())
         this.adapter = new ReadinessDashboardAdapter(options.sessionSecret)
         this.runtimeStartTime = options.runtimeStartTime || this.now()
+        this.runtimeId = options.runtimeId || crypto.randomUUID()
+        if (options.initialRuntimeStatus) {
+            this.runtimeStatus = options.initialRuntimeStatus
+        }
     }
 
     public getAdapter(): ReadinessDashboardAdapter {
         return this.adapter
+    }
+
+    public getRuntimeId(): string {
+        return this.runtimeId
+    }
+
+    public getRevision(): number {
+        return this.revision
+    }
+
+    public setRuntimeStatus(status: 'starting' | 'running' | 'degraded' | 'stopping'): void {
+        if (this.isDisposed) return
+        this.runtimeStatus = status
+        this.revision++
+        this.scheduleBroadcast()
+    }
+
+    public setDataSourceStatus(status: DataSourceStatusDto): void {
+        if (this.isDisposed) return
+        this.dataSourceStatus = {
+            status: status.status,
+            sourceFile: status.sourceFile,
+            environmentMode: status.environmentMode,
+            lastLoadedAt: status.lastLoadedAt,
+            acceptedCount: status.acceptedCount,
+            rejectedCount: status.rejectedCount,
+            rejections: status.rejections ? status.rejections.map(r => ({ ...r })) : undefined,
+            rejectionReasons: [...(status.rejectionReasons || [])],
+            error: status.error ? { ...status.error } : undefined
+        }
+        this.revision++
+        this.scheduleBroadcast()
+    }
+
+    public setMonitoringStatus(status: Partial<MonitoringStatusDto>): void {
+        if (this.isDisposed) return
+        this.monitoringStatus = {
+            ...this.monitoringStatus,
+            ...status
+        }
+        this.revision++
+        this.scheduleBroadcast()
+    }
+
+    public setBridgeDiagnostics(diagnostics: BridgeDiagnosticsDto): void {
+        if (this.isDisposed) return
+        this.bridgeDiagnostics = { ...diagnostics }
+        this.revision++
+        this.scheduleBroadcast()
+    }
+
+    public getMonitoringStatus(): MonitoringStatusDto {
+        return JSON.parse(JSON.stringify(this.monitoringStatus))
     }
 
     /**
@@ -40,17 +123,30 @@ export class ReadinessSnapshotStore {
      */
     public updateAccount(
         readiness: AccountReadinessResult,
-        tasks: TaskHandoffEnvelope[] = []
+        tasks: TaskHandoffEnvelope[] = [],
+        evidenceMeta?: { lastObservedAt?: string; isStale?: boolean }
     ): void {
         if (this.isDisposed) return
 
         // Bound task list to maxTimelineEntries
         const boundedTasks = tasks.slice(0, this.maxTimelineEntries)
-        const publicDto = this.adapter.toAccountPublicDto(readiness, boundedTasks)
+        const publicDto = this.adapter.toAccountPublicDto(readiness, boundedTasks, evidenceMeta)
 
         this.accountIdToPublicRef.set(readiness.accountId, publicDto.publicRef)
         this.accountDtos.set(publicDto.publicRef, publicDto)
 
+        this.revision++
+        this.scheduleBroadcast()
+    }
+
+    /**
+     * Clears all accounts currently in the store (e.g. on manifest reload).
+     */
+    public clearAccounts(): void {
+        if (this.isDisposed) return
+        this.accountDtos.clear()
+        this.accountIdToPublicRef.clear()
+        this.revision++
         this.scheduleBroadcast()
     }
 
@@ -59,11 +155,22 @@ export class ReadinessSnapshotStore {
      */
     public getSnapshot(): DashboardSnapshotDto {
         const uptimeSeconds = Math.max(0, Math.floor((this.now() - this.runtimeStartTime) / 1000))
-        const snapshot = this.adapter.createSnapshot(Array.from(this.accountDtos.values()), {
-            status: 'running',
-            uptimeSeconds,
-            observerOnly: true
-        })
+        const snapshot = this.adapter.createSnapshot(
+            Array.from(this.accountDtos.values()),
+            {
+                status: this.runtimeStatus,
+                uptimeSeconds,
+                observerOnly: true,
+                runtimeStartTime: new Date(this.runtimeStartTime).toISOString()
+            },
+            {
+                revision: this.revision,
+                runtimeId: this.runtimeId,
+                dataSource: this.dataSourceStatus,
+                monitoring: this.monitoringStatus,
+                bridgeDiagnostics: this.bridgeDiagnostics
+            }
+        )
 
         // Defensive copy
         return JSON.parse(JSON.stringify(snapshot))

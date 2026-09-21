@@ -94,11 +94,7 @@ export async function runObservationImporterTests(): Promise<void> {
 
             // Import sequence 5
             const env5 = createValidEnvelope(5)
-            await fs.promises.writeFile(
-                path.join(bridgeDir, 'incoming', 'obs_05.json'),
-                JSON.stringify(env5),
-                'utf8'
-            )
+            await fs.promises.writeFile(path.join(bridgeDir, 'incoming', 'obs_05.json'), JSON.stringify(env5), 'utf8')
             await importer.scanAndImport()
 
             // Attempt to import sequence 3 (regressed)
@@ -142,11 +138,7 @@ export async function runObservationImporterTests(): Promise<void> {
 
             const dupId = crypto.randomUUID()
             const env1 = createValidEnvelope(1, dupId)
-            await fs.promises.writeFile(
-                path.join(bridgeDir, 'incoming', 'obs_01.json'),
-                JSON.stringify(env1),
-                'utf8'
-            )
+            await fs.promises.writeFile(path.join(bridgeDir, 'incoming', 'obs_01.json'), JSON.stringify(env1), 'utf8')
             await importer.scanAndImport()
 
             // Next envelope with sequence 2 but same observationId
@@ -221,10 +213,7 @@ export async function runObservationImporterTests(): Promise<void> {
 
             // Diagnostic file must be sanitized (never contain the sensitive key)
             const diagFiles = await fs.promises.readdir(path.join(bridgeDir, 'diagnostics'))
-            const diagContent = await fs.promises.readFile(
-                path.join(bridgeDir, 'diagnostics', diagFiles[0]!),
-                'utf8'
-            )
+            const diagContent = await fs.promises.readFile(path.join(bridgeDir, 'diagnostics', diagFiles[0]!), 'utf8')
             if (diagContent.includes('stolen_bearer_token')) {
                 throw new Error('Diagnostic file leaked raw sensitive token!')
             }
@@ -243,11 +232,7 @@ export async function runObservationImporterTests(): Promise<void> {
             await importer.init()
 
             // Simulate abandoned claim from a dead pid (pid: 99999999)
-            const abandonedClaim = path.join(
-                bridgeDir,
-                'incoming',
-                'obs_stale.json.claiming.99999999.123456'
-            )
+            const abandonedClaim = path.join(bridgeDir, 'incoming', 'obs_stale.json.claiming.99999999.123456')
             const env = createValidEnvelope(1)
             await fs.promises.writeFile(abandonedClaim, JSON.stringify(env), 'utf8')
 
@@ -317,11 +302,7 @@ export async function runObservationImporterTests(): Promise<void> {
             await importer1.init()
 
             const env1 = createValidEnvelope(1)
-            await fs.promises.writeFile(
-                path.join(bridgeDir, 'incoming', 'obs_01.json'),
-                JSON.stringify(env1),
-                'utf8'
-            )
+            await fs.promises.writeFile(path.join(bridgeDir, 'incoming', 'obs_01.json'), JSON.stringify(env1), 'utf8')
             await importer1.scanAndImport()
 
             // Create a second importer on the same directory to verify persistence

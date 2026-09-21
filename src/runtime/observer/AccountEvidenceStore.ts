@@ -8,12 +8,7 @@ export const AccountEvidenceRecordSchema = z
         accountId: z.string().min(1),
         accountRef: z.string().min(1),
         displayAccount: z.string().min(1),
-        sessionState: z.enum([
-            'unknown',
-            'present-unverified',
-            'valid-from-server',
-            'expired-from-server'
-        ]),
+        sessionState: z.enum(['unknown', 'present-unverified', 'valid-from-server', 'expired-from-server']),
         restrictionState: z.enum(['none', 'rate-limited', 'blocked']),
         rateLimitExpiresAt: z.string().datetime({ offset: true }).optional(),
         restrictionReason: z.string().optional(),
@@ -50,17 +45,12 @@ export class AccountEvidenceStore {
     private isInitialized = false
 
     constructor(options: AccountEvidenceStoreOptions | string) {
-        const resolvedPath =
-            typeof options === 'string'
-                ? path.resolve(options)
-                : path.resolve(options.storePath)
+        const resolvedPath = typeof options === 'string' ? path.resolve(options) : path.resolve(options.storePath)
 
         this.storePath = resolvedPath
         this.backupPath = `${this.storePath}.bak`
         this.maxFileSizeBytes =
-            typeof options === 'object' && options.maxFileSizeBytes
-                ? options.maxFileSizeBytes
-                : 10 * 1024 * 1024 // 10MB
+            typeof options === 'object' && options.maxFileSizeBytes ? options.maxFileSizeBytes : 10 * 1024 * 1024 // 10MB
     }
 
     public isReady(): boolean {
@@ -163,10 +153,7 @@ export class AccountEvidenceStore {
             } catch {}
         }
 
-        const tmpPath = path.join(
-            storeDir,
-            `${path.basename(this.storePath)}.tmp.${process.pid}.${Date.now()}`
-        )
+        const tmpPath = path.join(storeDir, `${path.basename(this.storePath)}.tmp.${process.pid}.${Date.now()}`)
         await fs.promises.writeFile(tmpPath, serialized, 'utf-8')
         await retryAtomicRename(tmpPath, this.storePath)
     }
@@ -194,10 +181,7 @@ export class AccountEvidenceStore {
 
         if (existing) {
             // Monotonic sequence check: older sequence from same source cannot overwrite newer
-            if (
-                existing.source === validated.source &&
-                validated.evidenceSequence < existing.evidenceSequence
-            ) {
+            if (existing.source === validated.source && validated.evidenceSequence < existing.evidenceSequence) {
                 return
             }
 

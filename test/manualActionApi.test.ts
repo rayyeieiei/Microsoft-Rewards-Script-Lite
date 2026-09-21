@@ -6,10 +6,7 @@ import crypto from 'crypto'
 import { DashboardServer } from '../src/dashboard/DashboardServer'
 import { ReadinessSnapshotStore } from '../src/dashboard/ReadinessSnapshotStore'
 import { ManualActionStore } from '../src/manual/ManualActionStore'
-import {
-    computeStableAccountRef,
-    computeStableTaskRef
-} from '../src/contracts/AccountObservationContract'
+import { computeStableAccountRef, computeStableTaskRef } from '../src/contracts/AccountObservationContract'
 
 function makeRequest(
     options: http.RequestOptions,
@@ -231,7 +228,9 @@ export async function runManualActionApiTests(): Promise<void> {
             assert.strictEqual(reportBody.record.revision, 2)
             assert.strictEqual(reportBody.record.note, 'Done on phone')
 
-            console.log('  ✅ Test 5 Passed: User report advances lifecycle to action-reported while verificationState stays unverified')
+            console.log(
+                '  ✅ Test 5 Passed: User report advances lifecycle to action-reported while verificationState stays unverified'
+            )
         }
 
         // Test 6: Dismiss and Reopen mutations via API

@@ -47,7 +47,9 @@ export async function runObserverRuntimeTests(): Promise<void> {
                     `Forbidden browser/automation pattern found in observer runtime: ${pattern}`
                 )
             }
-            console.log('  ✅ Scenarios 1 & 2 Passed: Observer entrypoint exists & static audit confirms zero browser automation')
+            console.log(
+                '  ✅ Scenarios 1 & 2 Passed: Observer entrypoint exists & static audit confirms zero browser automation'
+            )
         }
 
         // =========================================================================
@@ -61,7 +63,7 @@ export async function runObserverRuntimeTests(): Promise<void> {
 
             // Intercept http & https requests
             http.request = function (...args: any[]): any {
-                const host = typeof args[0] === 'string' ? args[0] : (args[0]?.host || args[0]?.hostname || '')
+                const host = typeof args[0] === 'string' ? args[0] : args[0]?.host || args[0]?.hostname || ''
                 if (host && host !== '127.0.0.1' && host !== 'localhost') {
                     externalConnectionAttempted = true
                 }
@@ -227,19 +229,11 @@ export async function runObserverRuntimeTests(): Promise<void> {
                 { accountId: dupId, displayLabel: 'Account 2' }
             ]
 
-            assert.throws(
-                () => validateObserverIdentities(invalidIdentities),
-                /Duplicate accountId detected/
-            )
+            assert.throws(() => validateObserverIdentities(invalidIdentities), /Duplicate accountId detected/)
 
-            const malformedIdentities = [
-                { accountId: 'not-a-uuid', displayLabel: 'Account 3' }
-            ]
+            const malformedIdentities = [{ accountId: 'not-a-uuid', displayLabel: 'Account 3' }]
 
-            assert.throws(
-                () => validateObserverIdentities(malformedIdentities),
-                /Invalid/
-            )
+            assert.throws(() => validateObserverIdentities(malformedIdentities), /Invalid/)
             console.log('  ✅ Scenario 6 Passed: Duplicate or invalid account UUIDs rejected fail-closed')
         }
 
@@ -375,7 +369,11 @@ export async function runObserverRuntimeTests(): Promise<void> {
 
             const snapshot = runtime.getSnapshotStore().getSnapshot()
             const acc = snapshot.accounts[0]!
-            assert.strictEqual(acc.status, 'stale-evidence', 'Evidence older than threshold must be marked stale-evidence')
+            assert.strictEqual(
+                acc.status,
+                'stale-evidence',
+                'Evidence older than threshold must be marked stale-evidence'
+            )
 
             await runtime.stop()
             console.log('  ✅ Scenario 10 Passed: Dynamic staleness tracking transitions to stale-evidence')
@@ -396,7 +394,10 @@ export async function runObserverRuntimeTests(): Promise<void> {
             }
 
             const testId = '50000000-0000-4000-8000-000000000005'
-            const runtime = new ObserverRuntime({ config: testConfig, identities: [{ accountId: testId, displayLabel: 'User 5' }] })
+            const runtime = new ObserverRuntime({
+                config: testConfig,
+                identities: [{ accountId: testId, displayLabel: 'User 5' }]
+            })
             await runtime.start()
 
             // Record a manual action task

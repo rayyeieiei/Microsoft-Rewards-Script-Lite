@@ -1,5 +1,5 @@
 import { checkNodeVersion } from './util/Validator'
-import { loadObserverConfig, loadObserverIdentities } from './runtime/observer/ObserverConfig'
+import { loadObserverConfig, resolveObserverSourceSelection } from './runtime/observer/ObserverConfig'
 import { ObserverRuntime } from './runtime/observer/ObserverRuntime'
 
 async function bootstrap(): Promise<void> {
@@ -9,11 +9,14 @@ async function bootstrap(): Promise<void> {
 
     try {
         const config = loadObserverConfig()
-        const identities = loadObserverIdentities(config.identitiesPath)
+        const sourceSelection = resolveObserverSourceSelection(config, config.configDir, process.argv)
+        console.log(
+            `[OBSERVER] Mode: ${sourceSelection.environmentMode.toUpperCase()} | Sumber Akun: ${sourceSelection.sourceFile}`
+        )
 
         runtime = new ObserverRuntime({
             config,
-            identities
+            sourceSelection
         })
 
         const handleShutdown = async (signal: string, exitCode: number) => {
@@ -52,7 +55,13 @@ async function bootstrap(): Promise<void> {
         })
 
         await runtime.start()
-        console.log('[OBSERVER] Runtime active. Press Ctrl+C to stop.')
+        if (runtime.getState() === 'degraded') {
+            console.log(
+                '[OBSERVER] Runtime active in DEGRADED mode (periksa dashboard untuk petunjuk perbaikan konfigurasi).'
+            )
+        } else {
+            console.log('[OBSERVER] Runtime active. Press Ctrl+C to stop.')
+        }
     } catch (err: any) {
         console.error(`[OBSERVER-FATAL] Startup failed: ${err.message}`)
         if (runtime) {

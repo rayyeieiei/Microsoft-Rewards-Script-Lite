@@ -3,10 +3,7 @@ import path from 'path'
 import crypto from 'crypto'
 import cluster from 'cluster'
 import { z } from 'zod'
-import {
-    AccountObservationEnvelope,
-    validateAccountObservationEnvelope
-} from '../contracts/AccountObservationContract'
+import { AccountObservationEnvelope, validateAccountObservationEnvelope } from '../contracts/AccountObservationContract'
 import { retryAtomicRename } from '../util/FileUtils'
 
 export interface BridgeImportCursor {
@@ -62,6 +59,10 @@ export class ObservationImporter {
     private cursor: BridgeImportCursor | null = null
     private isScanning = false
     private pollTimer: NodeJS.Timeout | null = null
+    private rejectedCount = 0
+    private processedCount = 0
+    private lastDiagnosticMessage?: string
+    private lastImportedAt?: string
 
     constructor(options: ObservationImporterOptions) {
         if (cluster.isWorker && !options.allowInWorkerForTesting) {
@@ -95,6 +96,45 @@ export class ObservationImporter {
         await this.cleanupRetention()
     }
 
+    public getBridgeDirectory(): string {
+        return this.bridgeDirectory
+    }
+
+    public async getDiagnosticsSummary(): Promise<{
+        incomingFileCount: number
+        processedCount: number
+        rejectedCount: number
+        lastImportedAt?: string
+        lastDiagnosticMessage?: string
+    }> {
+        let incomingFileCount = 0
+        let processedCount = 0
+        let rejectedCount = 0
+
+        try {
+            if (fs.existsSync(this.incomingDir)) {
+                const files = await fs.promises.readdir(this.incomingDir)
+                incomingFileCount = files.filter(f => f.endsWith('.json') && !f.includes('.claiming.')).length
+            }
+            if (fs.existsSync(this.processedDir)) {
+                const files = await fs.promises.readdir(this.processedDir)
+                processedCount = files.filter(f => f.endsWith('.json')).length
+            }
+            if (fs.existsSync(this.rejectedDir)) {
+                const files = await fs.promises.readdir(this.rejectedDir)
+                rejectedCount = files.length
+            }
+        } catch {}
+
+        return {
+            incomingFileCount,
+            processedCount: Math.max(this.processedCount, processedCount),
+            rejectedCount: Math.max(this.rejectedCount, rejectedCount),
+            lastImportedAt: this.lastImportedAt,
+            lastDiagnosticMessage: this.lastDiagnosticMessage
+        }
+    }
+
     public getCursor(): BridgeImportCursor {
         if (!this.cursor) {
             throw new Error('ObservationImporter is not initialized. Call init() first.')
@@ -119,10 +159,7 @@ export class ObservationImporter {
             const parsed = JSON.parse(raw)
             this.cursor = BridgeImportCursorSchema.parse(parsed)
         } catch (err: any) {
-            const corruptedPath = path.join(
-                this.bridgeDirectory,
-                `bridge_cursor.corrupted.${Date.now()}.json`
-            )
+            const corruptedPath = path.join(this.bridgeDirectory, `bridge_cursor.corrupted.${Date.now()}.json`)
             try {
                 await fs.promises.rename(this.cursorPath, corruptedPath)
             } catch {}
@@ -134,10 +171,7 @@ export class ObservationImporter {
 
     private async saveCursor(): Promise<void> {
         if (!this.cursor) return
-        const tempPath = path.join(
-            this.bridgeDirectory,
-            `bridge_cursor.tmp.${process.pid}.${Date.now()}`
-        )
+        const tempPath = path.join(this.bridgeDirectory, `bridge_cursor.tmp.${process.pid}.${Date.now()}`)
         const payload = JSON.stringify(this.cursor, null, 2)
         await fs.promises.writeFile(tempPath, payload, 'utf8')
         await retryAtomicRename(tempPath, this.cursorPath)
@@ -375,6 +409,8 @@ export class ObservationImporter {
                     await this.saveCursor()
 
                     importedEnvelopes.push(envelope)
+                    this.processedCount++
+                    this.lastImportedAt = new Date().toISOString()
                 } catch (validationOrProcessErr: any) {
                     // Record rejection in diagnostics/ and delete the raw payload
                     let byteSize = 0
@@ -409,6 +445,9 @@ export class ObservationImporter {
         checksumSha256: string,
         rejectionReason: string
     ): Promise<void> {
+        this.rejectedCount++
+        this.lastDiagnosticMessage = rejectionReason
+
         const diagnostic: BridgeRejectionDiagnostic = {
             timestamp: new Date().toISOString(),
             claimedFilename,
@@ -426,11 +465,57 @@ export class ObservationImporter {
             await retryAtomicRename(diagTmp, diagPath)
         } catch {}
 
-        // Always delete raw invalid/untrusted payload
+        // Quarantine raw payload in rejectedDir if not symlink, then remove from claimPath
         try {
             if (fs.existsSync(claimPath)) {
+                const stat = await fs.promises.lstat(claimPath)
+                if (!stat.isSymbolicLink()) {
+                    const cleanName = path.basename(claimedFilename).replace(/\.claiming\..*$/, '')
+                    const rejectedFilename = `rejected_${Date.now()}_${cleanName}`
+                    const rejectedTarget = path.join(this.rejectedDir, rejectedFilename)
+                    try {
+                        await fs.promises.copyFile(claimPath, rejectedTarget)
+                    } catch {}
+                }
                 await fs.promises.unlink(claimPath)
             }
+        } catch {}
+    }
+
+    public async recordCustomRejection(
+        filename: string,
+        content: string,
+        rejectionReason: string
+    ): Promise<void> {
+        this.rejectedCount++
+        this.lastDiagnosticMessage = rejectionReason
+
+        const checksumSha256 = crypto.createHash('sha256').update(content).digest('hex')
+        const byteSize = Buffer.byteLength(content, 'utf8')
+
+        const diagnostic: BridgeRejectionDiagnostic = {
+            timestamp: new Date().toISOString(),
+            claimedFilename: filename,
+            byteSize,
+            checksumSha256,
+            rejectionReason
+        }
+
+        const diagName = `reject_${Date.now()}_${checksumSha256.slice(0, 16)}.json`
+        const diagPath = path.join(this.diagnosticsDir, diagName)
+        const diagTmp = `${diagPath}.tmp.${process.pid}.${Date.now()}`
+
+        try {
+            await fs.promises.writeFile(diagTmp, JSON.stringify(diagnostic, null, 2), 'utf8')
+            await retryAtomicRename(diagTmp, diagPath)
+        } catch {}
+
+        const rejectedFilename = `rejected_${Date.now()}_${path.basename(filename)}`
+        const rejectedTarget = path.join(this.rejectedDir, rejectedFilename)
+        const rejectedTmp = `${rejectedTarget}.tmp.${process.pid}.${Date.now()}`
+        try {
+            await fs.promises.writeFile(rejectedTmp, content, 'utf8')
+            await retryAtomicRename(rejectedTmp, rejectedTarget)
         } catch {}
     }
 

@@ -1,15 +1,7 @@
 import { z } from 'zod'
-import {
-    ObservationReason,
-    ObservationReasonSchema
-} from '../contracts/AccountObservationContract'
+import { ObservationReason, ObservationReasonSchema } from '../contracts/AccountObservationContract'
 
-export type ManualTaskLifecycleState =
-    | 'available'
-    | 'in-progress'
-    | 'action-reported'
-    | 'dismissed'
-    | 'expired'
+export type ManualTaskLifecycleState = 'available' | 'in-progress' | 'action-reported' | 'dismissed' | 'expired'
 
 export type ManualTaskVerificationState =
     | 'unverified'

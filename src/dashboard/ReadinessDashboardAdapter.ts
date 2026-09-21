@@ -6,7 +6,11 @@ import {
     AccountReadinessPublicDto,
     DashboardSnapshotDto,
     DashboardSummaryDto,
-    DashboardTaskDto
+    DashboardTaskDto,
+    DataSourceStatusDto,
+    MonitoringStatusDto,
+    BridgeDiagnosticsDto,
+    EvidenceState
 } from './DashboardTypes'
 
 export class ReadinessDashboardAdapter {
@@ -60,10 +64,25 @@ export class ReadinessDashboardAdapter {
      */
     public toAccountPublicDto(
         readiness: AccountReadinessResult,
-        tasks: TaskHandoffEnvelope[] = []
+        tasks: TaskHandoffEnvelope[] = [],
+        evidenceMeta?: { lastObservedAt?: string; isStale?: boolean }
     ): AccountReadinessPublicDto {
         const publicRef = this.getOrCreatePublicRef(readiness.accountId)
         const displayAccount = redactAccountKey(readiness.displayAccount)
+
+        let evidenceState: EvidenceState = 'none'
+        let evidenceObservedAt: string | undefined = undefined
+
+        if (evidenceMeta?.lastObservedAt) {
+            evidenceObservedAt = evidenceMeta.lastObservedAt
+            evidenceState = evidenceMeta.isStale ? 'stale' : 'present'
+        } else if (readiness.status === 'stale-evidence') {
+            evidenceState = 'stale'
+            evidenceObservedAt = readiness.lastObservedAt
+        } else if (readiness.sessionState === 'valid-from-server' || readiness.sessionState === 'expired-from-server') {
+            evidenceState = 'present'
+            evidenceObservedAt = readiness.lastObservedAt
+        }
 
         // Convert and sort tasks by observedAt descending
         const taskDtos: DashboardTaskDto[] = tasks
@@ -100,6 +119,8 @@ export class ReadinessDashboardAdapter {
             status: readiness.status,
             reasons: [...readiness.reasons],
             sessionState: readiness.sessionState,
+            evidenceState,
+            evidenceObservedAt,
             pendingTaskCount: taskDtos.length,
             advertisedPointsRemaining: readiness.advertisedPointsRemaining,
             lastObservedAt: readiness.lastObservedAt,
@@ -111,7 +132,8 @@ export class ReadinessDashboardAdapter {
     }
 
     /**
-     * Creates an immutable DashboardSnapshotDto with recalculated summary counters.
+     * Creates an immutable DashboardSnapshotDto with recalculated summary counters,
+     * monotonic revision, runtime metadata, and data source loading status.
      */
     public createSnapshot(
         accountDtos: AccountReadinessPublicDto[],
@@ -119,12 +141,18 @@ export class ReadinessDashboardAdapter {
             status: 'starting' | 'running' | 'degraded' | 'stopping'
             uptimeSeconds: number
             observerOnly: true
+            runtimeStartTime?: string
+        },
+        meta?: {
+            revision?: number
+            runtimeId?: string
+            dataSource?: DataSourceStatusDto
+            monitoring?: MonitoringStatusDto
+            bridgeDiagnostics?: BridgeDiagnosticsDto
         }
     ): DashboardSnapshotDto {
         // Deterministic sort by displayAccount
-        const sortedAccounts = [...accountDtos].sort((a, b) =>
-            a.displayAccount.localeCompare(b.displayAccount)
-        )
+        const sortedAccounts = [...accountDtos].sort((a, b) => a.displayAccount.localeCompare(b.displayAccount))
 
         // Recalculate summary counters
         let unknown = 0
@@ -175,11 +203,53 @@ export class ReadinessDashboardAdapter {
             generatedAt: new Date().toISOString()
         }
 
+        const defaultDataSource: DataSourceStatusDto = {
+            status: totalAccounts > 0 ? 'loaded' : 'empty',
+            sourceFile: 'accounts.json',
+            environmentMode: 'normal',
+            acceptedCount: totalAccounts,
+            rejectedCount: 0,
+            rejectionReasons: []
+        }
+
+        const runtimeStartTime =
+            runtimeInfo.runtimeStartTime || new Date(Date.now() - runtimeInfo.uptimeSeconds * 1000).toISOString()
+
+        const rawDataSource = meta?.dataSource ?? defaultDataSource
+        const activeDataSource: DataSourceStatusDto = {
+            status: rawDataSource.status,
+            sourceFile: rawDataSource.sourceFile,
+            environmentMode: rawDataSource.environmentMode,
+            lastLoadedAt: rawDataSource.lastLoadedAt,
+            acceptedCount: rawDataSource.acceptedCount,
+            rejectedCount: rawDataSource.rejectedCount,
+            rejections: rawDataSource.rejections ? rawDataSource.rejections.map(r => ({ ...r })) : undefined,
+            rejectionReasons: [...(rawDataSource.rejectionReasons || [])],
+            error: rawDataSource.error ? { ...rawDataSource.error } : undefined
+        }
+        const activeMonitoring: MonitoringStatusDto = meta?.monitoring ?? {
+            monitoringState: 'running',
+            checkingState: 'idle'
+        }
+
         return {
+            revision: meta?.revision ?? 1,
+            runtimeId: meta?.runtimeId ?? 'local-observer-runtime',
             summary,
+            dataSource: activeDataSource,
+            monitoring: activeMonitoring,
+            bridgeDiagnostics: meta?.bridgeDiagnostics,
             accounts: sortedAccounts,
             generatedAt: summary.generatedAt,
-            runtime: { ...runtimeInfo }
+            runtime: {
+                status: runtimeInfo.status,
+                uptimeSeconds: runtimeInfo.uptimeSeconds,
+                observerOnly: true,
+                modeLabel: 'Observer lokal',
+                description: 'Memantau konfigurasi dan status lokal. Tidak menjalankan aktivitas perolehan poin.',
+                runtimeStartTime,
+                environmentMode: activeDataSource.environmentMode || 'normal'
+            }
         }
     }
 }

@@ -16,21 +16,22 @@ export class ObservationReconciler {
         this.store = store
     }
 
-    public async reconcile(envelope: AccountObservationEnvelope): Promise<ReconcileResult> {
+    public async reconcile(envelope: AccountObservationEnvelope, targetAccountId?: string): Promise<ReconcileResult> {
         let created = 0
         let updated = 0
         let verifiedComplete = 0
 
+        const accountRefToUse = targetAccountId || envelope.accountRef
         const recordsToUpsert: ManualActionRecord[] = []
         const now = new Date().toISOString()
         const nowMs = Date.now()
 
         for (const task of envelope.tasks) {
-            const existing = this.store.findByTaskRef(envelope.accountRef, task.taskRef)
+            const existing =
+                this.store.findByTaskRef(accountRefToUse, task.taskRef) ||
+                this.store.findByTaskRef(envelope.accountRef, task.taskRef)
 
-            const isExpired = task.expiresAt
-                ? new Date(task.expiresAt).getTime() < nowMs
-                : false
+            const isExpired = task.expiresAt ? new Date(task.expiresAt).getTime() < nowMs : false
 
             if (existing) {
                 let hasChanges = false
@@ -98,7 +99,7 @@ export class ObservationReconciler {
                 if (task.state === 'incomplete') {
                     const newRecord: ManualActionRecord = {
                         recordId: crypto.randomUUID(),
-                        accountRef: envelope.accountRef,
+                        accountRef: accountRefToUse,
                         displayAccount: envelope.displayAccount,
                         taskRef: task.taskRef,
                         title: task.title,

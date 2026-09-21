@@ -63,9 +63,7 @@ export async function runManualActionStoreTests(): Promise<void> {
             const record1 = store.findByTaskRef(accountRef, taskRef1)
             if (!record1) throw new Error('Record not found after reconcile')
             if (record1.lifecycleState !== 'available' || record1.verificationState !== 'unverified') {
-                throw new Error(
-                    `Initial state mismatch: ${record1.lifecycleState}, ${record1.verificationState}`
-                )
+                throw new Error(`Initial state mismatch: ${record1.lifecycleState}, ${record1.verificationState}`)
             }
 
             // Step B: User reports action completed
@@ -128,9 +126,7 @@ export async function runManualActionStoreTests(): Promise<void> {
 
             const afterComplete = store.getRecord(record1.recordId)!
             if (afterComplete.verificationState !== 'verified-complete') {
-                throw new Error(
-                    `Expected verificationState verified-complete, got ${afterComplete.verificationState}`
-                )
+                throw new Error(`Expected verificationState verified-complete, got ${afterComplete.verificationState}`)
             }
             if (!afterComplete.verifiedAt) {
                 throw new Error('Expected verifiedAt timestamp to be set')

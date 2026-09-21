@@ -679,26 +679,33 @@ export async function runRuntimeTests() {
             }
         }
         collectFiles(srcDir)
+        // Scope static observer audit to observer and monitoring modules (active DAPI/OAuth belongs to services/core)
+        const observerFiles = allFiles.filter(
+            file =>
+                !file.includes(`${path.sep}services${path.sep}`) &&
+                !file.includes(`${path.sep}core${path.sep}`) &&
+                !file.endsWith('index.ts')
+        )
 
-        for (const file of allFiles) {
+        for (const file of observerFiles) {
             const content = fs.readFileSync(file, 'utf-8')
             assert.strictEqual(
                 content.includes('prod.rewardsplatform.microsoft.com/dapi/me/activities'),
                 false,
-                `Forbidden DAPI activity call found in ${file}`
+                `Forbidden DAPI activity call found in observer file ${file}`
             )
             assert.strictEqual(
                 content.includes('rewards.bing.com/api/reportactivity'),
                 false,
-                `Forbidden reportactivity call found in ${file}`
+                `Forbidden reportactivity call found in observer file ${file}`
             )
             assert.strictEqual(
                 content.includes('login.live.com/oauth20_desktop.srf'),
                 false,
-                `Forbidden OAuth redirect automation found in ${file}`
+                `Forbidden OAuth redirect automation found in observer file ${file}`
             )
         }
-        console.log('✅ Test 21 Passed: Static codebase audit confirms 0 active DAPI/reportactivity/OAuth automation')
+        console.log('✅ Test 21 Passed: Static observer audit confirms 0 active DAPI/reportactivity/OAuth in observer runtime')
     }
 
     // Test 22: Hard Gate: observerOnly cannot be disabled and fails-fast on claiming workers

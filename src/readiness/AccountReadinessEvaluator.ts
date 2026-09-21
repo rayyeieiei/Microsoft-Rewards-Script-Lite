@@ -2,10 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { Account } from '../interface/Account'
 import { TaskHandoffEnvelope } from '../contracts/ExecutionContract'
-import {
-    AccountReadinessResult,
-    SessionState
-} from './AccountReadinessTypes'
+import { AccountReadinessResult, SessionState } from './AccountReadinessTypes'
+import { ObserverPaths } from '../runtime/observer/ObserverPaths'
 
 export interface ExistingRuntimeEvidence {
     sessionValid?: boolean
@@ -50,16 +48,8 @@ export class AccountReadinessEvaluator {
         evidence?: ExistingRuntimeEvidence,
         contextOptions?: EvaluateContextOptions
     ): AccountReadinessResult {
-        const accountId =
-            (account as any).accountId ||
-            (account as any).id ||
-            (account as any).email ||
-            ''
-        const displayAccount =
-            (account as any).displayLabel ||
-            (account as any).email ||
-            accountId ||
-            'unknown'
+        const accountId = (account as any).accountId || (account as any).id || (account as any).email || ''
+        const displayAccount = (account as any).displayLabel || (account as any).email || accountId || 'unknown'
 
         const reasons: string[] = []
         let sessionState: SessionState = 'unknown'
@@ -141,9 +131,7 @@ export class AccountReadinessEvaluator {
             const isStale = !isNaN(observedMs) && nowMs - observedMs > staleHours * 3600 * 1000
 
             if (isStale) {
-                sessionState = evidence?.sessionValid
-                    ? 'valid-from-existing-runtime-evidence'
-                    : 'expired'
+                sessionState = evidence?.sessionValid ? 'valid-from-existing-runtime-evidence' : 'expired'
                 reasons.push(`Server observation is older than ${staleHours} hours (stale evidence)`)
                 return {
                     accountId,
@@ -152,7 +140,7 @@ export class AccountReadinessEvaluator {
                     reasons,
                     sessionState,
                     lastObservedAt,
-                    nextAction: 'Run Main observation pass to refresh account snapshot',
+                    nextAction: 'Segarkan bukti akun melalui observasi terbaru',
                     recentFailureCount
                 }
             }
@@ -189,7 +177,11 @@ export class AccountReadinessEvaluator {
                         advertisedPointsRemaining += maybePoints
                     }
 
-                    if (t.lifecycleState === 'open' || t.lifecycleState === 'available' || t.lifecycleState === 'in-progress') {
+                    if (
+                        t.lifecycleState === 'open' ||
+                        t.lifecycleState === 'available' ||
+                        t.lifecycleState === 'in-progress'
+                    ) {
                         if (
                             t.reason === 'interactive-dom-required' ||
                             t.reason === 'official-client-required' ||
@@ -221,7 +213,8 @@ export class AccountReadinessEvaluator {
                         status: 'manual-review-required',
                         reasons,
                         sessionState,
-                        advertisedPointsRemaining: advertisedPointsRemaining > 0 ? advertisedPointsRemaining : undefined,
+                        advertisedPointsRemaining:
+                            advertisedPointsRemaining > 0 ? advertisedPointsRemaining : undefined,
                         lastObservedAt,
                         nextAction: 'Perform manual interaction in official client or browser',
                         recentFailureCount
@@ -236,9 +229,10 @@ export class AccountReadinessEvaluator {
                         status: 'awaiting-verification',
                         reasons,
                         sessionState,
-                        advertisedPointsRemaining: advertisedPointsRemaining > 0 ? advertisedPointsRemaining : undefined,
+                        advertisedPointsRemaining:
+                            advertisedPointsRemaining > 0 ? advertisedPointsRemaining : undefined,
                         lastObservedAt,
-                        nextAction: 'Wait for next Main observation pass to verify completion',
+                        nextAction: 'Menunggu observasi berikutnya untuk memverifikasi penyelesaian tindakan',
                         recentFailureCount
                     }
                 }
@@ -251,7 +245,8 @@ export class AccountReadinessEvaluator {
                         status: 'technically-ready-for-handoff',
                         reasons,
                         sessionState,
-                        advertisedPointsRemaining: advertisedPointsRemaining > 0 ? advertisedPointsRemaining : undefined,
+                        advertisedPointsRemaining:
+                            advertisedPointsRemaining > 0 ? advertisedPointsRemaining : undefined,
                         lastObservedAt,
                         nextAction: 'Export or hand off tasks to Main execution engine',
                         recentFailureCount
@@ -280,32 +275,40 @@ export class AccountReadinessEvaluator {
         // =========================================================================
         // PRIORITY 5: Local Artifact Fallback (Zero Server Evidence)
         // =========================================================================
-        const emailOrLabel = (account as any).email || accountId
-        const accountSessionDir = path.join(this.sessionBasePath, emailOrLabel)
-        const desktopSessionFile = path.join(accountSessionDir, 'session_desktop.json')
-        const mobileSessionFile = path.join(accountSessionDir, 'session_mobile.json')
+        const lookupCandidate =
+            (account as any).sessionLookupKey ||
+            (account as any).email ||
+            (typeof accountId === 'string' && !accountId.includes('/') && !accountId.includes('\\') ? accountId : '')
 
-        const hasDesktopSession = fs.existsSync(desktopSessionFile)
-        const hasMobileSession = fs.existsSync(mobileSessionFile)
+        const accountSessionDir = ObserverPaths.resolveAccountSessionDir(this.sessionBasePath, lookupCandidate)
+        let hasDesktopSession = false
+        let hasMobileSession = false
+
+        if (accountSessionDir && fs.existsSync(accountSessionDir)) {
+            const desktopSessionFile = path.join(accountSessionDir, 'session_desktop.json')
+            const mobileSessionFile = path.join(accountSessionDir, 'session_mobile.json')
+            hasDesktopSession = fs.existsSync(desktopSessionFile)
+            hasMobileSession = fs.existsSync(mobileSessionFile)
+        }
 
         if (hasDesktopSession || hasMobileSession) {
             sessionState = 'present-unverified'
-            reasons.push('Local session artifact located on disk (unverified)')
+            reasons.push('Data sesi lokal ditemukan; validitas login belum diverifikasi')
             return {
                 accountId,
                 displayAccount,
-                status: 'present-unverified',
+                status: 'unknown',
                 reasons,
                 sessionState,
                 lastObservedAt,
-                nextAction: 'Run Main observation pass to verify local session',
+                nextAction: 'Penghasil bukti observasi belum terhubung',
                 recentFailureCount
             }
         }
 
         // No session artifact on disk and zero server evidence -> UNKNOWN
         sessionState = 'missing'
-        reasons.push('No saved session artifacts found on disk and zero server observations recorded')
+        reasons.push('Tidak ada file sesi lokal dan belum ada bukti observasi')
         return {
             accountId,
             displayAccount,
@@ -313,7 +316,7 @@ export class AccountReadinessEvaluator {
             reasons,
             sessionState,
             lastObservedAt,
-            nextAction: 'Awaiting initial observation pass',
+            nextAction: 'Penghasil bukti observasi belum terhubung',
             recentFailureCount
         }
     }

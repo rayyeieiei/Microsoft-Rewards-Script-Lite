@@ -11,12 +11,7 @@ export type ObservationSessionState =
     | 'valid-from-existing-runtime-evidence'
     | 'unknown'
 
-export type ObservedTaskState =
-    | 'incomplete'
-    | 'complete'
-    | 'locked'
-    | 'unsupported'
-    | 'unknown'
+export type ObservedTaskState = 'incomplete' | 'complete' | 'locked' | 'unsupported' | 'unknown'
 
 export type ObservationReason =
     | 'manual-action-required'
@@ -65,13 +60,7 @@ export const ObservationSessionStateSchema = z.enum([
     'unknown'
 ])
 
-export const ObservedTaskStateSchema = z.enum([
-    'incomplete',
-    'complete',
-    'locked',
-    'unsupported',
-    'unknown'
-])
+export const ObservedTaskStateSchema = z.enum(['incomplete', 'complete', 'locked', 'unsupported', 'unknown'])
 
 export const ObservationReasonSchema = z.enum([
     'manual-action-required',
@@ -85,7 +74,11 @@ export const ObservationReasonSchema = z.enum([
 
 export const ObservedTaskSchema = z
     .object({
-        taskRef: z.string().min(8).max(64).regex(/^[a-f0-9]+$/i, 'taskRef must be a valid hex string'),
+        taskRef: z
+            .string()
+            .min(8)
+            .max(64)
+            .regex(/^[a-f0-9]+$/i, 'taskRef must be a valid hex string'),
         title: z.string().min(1).max(120),
         taskKind: z.string().min(1).max(50),
         state: ObservedTaskStateSchema,
@@ -113,7 +106,11 @@ export const AccountObservationEnvelopeSchema = z
         observationId: z.string().uuid(),
         sequence: z.number().int().positive(),
         source: z.literal('main'),
-        accountRef: z.string().min(8).max(64).regex(/^[a-f0-9]+$/i, 'accountRef must be a valid hex string'),
+        accountRef: z
+            .string()
+            .min(3)
+            .max(128)
+            .regex(/^[a-zA-Z0-9_.@-]+$/, 'accountRef must be a valid hex HMAC, UUID, or email identifier'),
         displayAccount: z.string().min(1).max(100),
         emittedAt: z.string().datetime({ offset: true }),
         sessionState: ObservationSessionStateSchema,
@@ -210,12 +207,11 @@ export function validateExplicitAccountUuid(accountId: unknown): string {
 }
 
 export function computeStableAccountRef(referenceKey: Buffer | string, accountId: string): string {
-    const validUuid = validateExplicitAccountUuid(accountId)
-    return crypto
-        .createHmac('sha256', referenceKey)
-        .update(validUuid)
-        .digest('hex')
-        .slice(0, 32)
+    if (typeof accountId !== 'string' || !accountId.trim()) {
+        throw new Error('[IDENTITY-SECURITY] Account ID must be a non-empty string')
+    }
+    const normalized = accountId.trim().toLowerCase()
+    return crypto.createHmac('sha256', referenceKey).update(normalized).digest('hex').slice(0, 32)
 }
 
 export function computeStableTaskRef(
@@ -224,7 +220,10 @@ export function computeStableTaskRef(
     taskKind: string,
     stableSourceId: string
 ): string {
-    const validUuid = validateExplicitAccountUuid(accountId)
+    if (typeof accountId !== 'string' || !accountId.trim()) {
+        throw new Error('[IDENTITY-SECURITY] Account ID must be a non-empty string')
+    }
+    const normalizedId = accountId.trim().toLowerCase()
     const normalizedKind = taskKind.trim().toLowerCase()
     const normalizedSourceId = (stableSourceId || '').trim()
 
@@ -232,10 +231,6 @@ export function computeStableTaskRef(
         throw new Error('[TASK-REF-SECURITY] stableSourceId is required to generate a stable taskRef')
     }
 
-    const payload = `${validUuid}::${normalizedKind}::${normalizedSourceId}`
-    return crypto
-        .createHmac('sha256', referenceKey)
-        .update(payload)
-        .digest('hex')
-        .slice(0, 32)
+    const payload = `${normalizedId}::${normalizedKind}::${normalizedSourceId}`
+    return crypto.createHmac('sha256', referenceKey).update(payload).digest('hex').slice(0, 32)
 }
