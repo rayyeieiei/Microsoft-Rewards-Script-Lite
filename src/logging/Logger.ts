@@ -2,8 +2,6 @@ import chalk from 'chalk'
 import cluster from 'cluster'
 import { sendDiscord } from './Discord'
 import { sendNtfy } from './Ntfy'
-import type { MicrosoftRewardsBot } from '../index'
-import { errorDiagnostic } from '../util/ErrorDiagnostic'
 import type { LogFilter } from '../interface/Config'
 
 import { sanitizeLogMessage, redactAccountKey } from '../util/Redaction'
@@ -47,7 +45,7 @@ function formatMessage(message: string | Error): string {
 }
 
 export class Logger {
-    constructor(private bot: MicrosoftRewardsBot) {}
+    constructor(private bot?: any) {}
 
     info(isMobile: Platform, title: string, message: string, color?: ColorKey) {
         return this.baseLog('info', isMobile, title, message, color)
@@ -130,14 +128,6 @@ export class Logger {
                     break
                 default:
                     break
-            }
-        }
-
-        if (level === 'error' && config?.errorDiagnostics) {
-            const page = this.bot?.isMobile ? this.bot?.mainMobilePage : this.bot?.mainDesktopPage
-            if (page) {
-                const error = message instanceof Error ? message : new Error(String(message))
-                errorDiagnostic(page, error)
             }
         }
 

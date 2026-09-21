@@ -28,16 +28,10 @@ export async function retryAtomicRename(
             attempt++
             const isLockError =
                 err &&
-                (err.code === 'EPERM' ||
-                    err.code === 'EBUSY' ||
-                    err.code === 'EACCES' ||
-                    err.syscall === 'rename')
+                (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES' || err.syscall === 'rename')
 
             if (isLockError && attempt <= maxRetries) {
-                const delay = Math.min(
-                    baseDelayMs * Math.pow(1.5, attempt - 1) + Math.random() * 10,
-                    maxDelayMs
-                )
+                const delay = Math.min(baseDelayMs * Math.pow(1.5, attempt - 1) + Math.random() * 10, maxDelayMs)
                 await new Promise(resolve => setTimeout(resolve, delay))
                 continue
             }
