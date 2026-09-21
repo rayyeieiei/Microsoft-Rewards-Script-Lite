@@ -5,6 +5,10 @@ import { runManualActionStoreTests } from './manualActionStore.test'
 import { runManualActionApiTests } from './manualActionApi.test'
 import { runBridgeSecurityAndE2ETests } from './bridgeSecurityAndE2E.test'
 import { runObserverRuntimeTests } from './observerRuntime.test'
+import { runAccountLoaderTests } from './accountLoader.test'
+import { runObserverControlTests } from './observerControl.test'
+import { runReadinessEvidenceFlowTests } from './readinessEvidenceFlow.test'
+import { runPureHttpEngineTests } from './pureHttpEngine.test'
 
 async function runAll() {
     console.log('🧪 Starting Microsoft-Rewards-Script-Lite Full Test Suite...\n')
@@ -21,6 +25,14 @@ async function runAll() {
     await runBridgeSecurityAndE2ETests()
     console.log('')
     await runObserverRuntimeTests()
+    console.log('')
+    await runAccountLoaderTests()
+    console.log('')
+    await runObserverControlTests()
+    console.log('')
+    await runReadinessEvidenceFlowTests()
+    console.log('')
+    await runPureHttpEngineTests()
     console.log('\n🎉 ALL TESTS IN SUITE PASSED SUCCESSFULLY!')
 }
 
