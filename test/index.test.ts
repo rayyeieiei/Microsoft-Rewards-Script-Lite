@@ -9,6 +9,7 @@ import { runAccountLoaderTests } from './accountLoader.test'
 import { runObserverControlTests } from './observerControl.test'
 import { runReadinessEvidenceFlowTests } from './readinessEvidenceFlow.test'
 import { runPureHttpEngineTests } from './pureHttpEngine.test'
+import { runWarmupConfigTests } from './warmupConfig.test'
 
 async function runAll() {
     console.log('🧪 Starting Microsoft-Rewards-Script-Lite Full Test Suite...\n')
@@ -33,6 +34,8 @@ async function runAll() {
     await runReadinessEvidenceFlowTests()
     console.log('')
     await runPureHttpEngineTests()
+    console.log('')
+    await runWarmupConfigTests()
     console.log('\n🎉 ALL TESTS IN SUITE PASSED SUCCESSFULLY!')
 }
 

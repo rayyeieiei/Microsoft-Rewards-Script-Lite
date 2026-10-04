@@ -1,4 +1,8 @@
 import assert from 'assert'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import crypto from 'crypto'
 import http from 'http'
 import { AddressInfo } from 'net'
 import { HttpClient, CANONICAL_EDGE_ANDROID_HEADERS } from '../src/core/HttpClient'
@@ -9,6 +13,7 @@ import { LiteAccountScope, extractSafeErrorMessage } from '../src/core/LiteAccou
 import { getDefaultConfig, LiteConfigSchema } from '../src/core/Config'
 import { sanitizeLogMessage, redactAccountKey } from '../src/util/Redaction'
 import { runCountdown } from '../src/index'
+import { SessionResolver } from '../src/core/SessionResolver'
 
 export async function runPureHttpEngineTests() {
     console.log('🧪 Starting Pure HTTP / DAPI Engine Acceptance Test Suite...\n')
@@ -643,5 +648,175 @@ export async function runPureHttpEngineTests() {
         console.log('  ✅ Test 14 Passed: Irwin-Hall non-linear reading delay distribution (6000-12000ms) verified')
     }
 
-    console.log('\n🎉 ALL 14 PURE HTTP / DAPI ENGINE ACCEPTANCE TESTS PASSED SUCCESSFULLY!\n')
+    // =========================================================================
+    // TEST 15: Session Interoperability Engine (SessionResolver & Crucial Cookies)
+    // =========================================================================
+    {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lite_session_test_'))
+        try {
+            const account = {
+                email: 'interop.user@outlook.com',
+                accountId: 'mock-account-interop-12345'
+            }
+
+            const storageKey = SessionResolver.computeStorageKey(account.accountId)
+            const modernFilePath = path.join(tempDir, `${storageKey}.mobile.storageState.json`)
+
+            // Create modern envelope format as emitted by Main v3.1.4
+            const envelopeData = {
+                schemaVersion: 1,
+                accountId: account.accountId,
+                device: 'mobile',
+                savedAt: Date.now(),
+                storageState: {
+                    cookies: [
+                        {
+                            name: '_U',
+                            value: 'mock_U_cookie_value_123',
+                            domain: '.bing.com',
+                            path: '/',
+                            expires: -1,
+                            httpOnly: false,
+                            secure: true,
+                            sameSite: 'None'
+                        },
+                        {
+                            name: 'KievRPSAuth',
+                            value: 'mock_KievRPSAuth_value_456',
+                            domain: '.bing.com',
+                            path: '/',
+                            expires: -1,
+                            httpOnly: true,
+                            secure: true,
+                            sameSite: 'None'
+                        },
+                        {
+                            name: 'MUID',
+                            value: 'mock_MUID_value_789',
+                            domain: '.bing.com',
+                            path: '/',
+                            expires: -1,
+                            httpOnly: false,
+                            secure: true,
+                            sameSite: 'None'
+                        },
+                        {
+                            name: 'RPSTAuth',
+                            value: 'mock_RPSTAuth_value_999',
+                            domain: '.live.com',
+                            path: '/',
+                            expires: -1,
+                            httpOnly: true,
+                            secure: true,
+                            sameSite: 'None'
+                        },
+                        {
+                            name: 'WLSSC',
+                            value: 'mock_WLSSC_token_abc',
+                            domain: '.live.com',
+                            path: '/',
+                            expires: -1,
+                            httpOnly: true,
+                            secure: true,
+                            sameSite: 'None'
+                        },
+                        {
+                            name: 'unrelated_cookie',
+                            value: 'unrelated_val',
+                            domain: 'randomsite.org',
+                            path: '/'
+                        }
+                    ],
+                    origins: []
+                }
+            }
+
+            fs.writeFileSync(modernFilePath, JSON.stringify(envelopeData, null, 2))
+
+            // 1. Resolve session via SessionResolver
+            const resolved = SessionResolver.resolveSession(account, 'mobile', tempDir)
+            assert.ok(resolved, 'Must find and resolve session from candidate directory')
+            assert.strictEqual(resolved!.source, 'modern-envelope')
+            assert.strictEqual(resolved!.accountId, account.accountId)
+            assert.strictEqual(resolved!.device, 'mobile')
+
+            // 2. Verify crucial cookies extraction
+            assert.strictEqual(resolved!.crucialCookies._U, 'mock_U_cookie_value_123')
+            assert.strictEqual(resolved!.crucialCookies.KievRPSAuth, 'mock_KievRPSAuth_value_456')
+            assert.strictEqual(resolved!.crucialCookies.MUID, 'mock_MUID_value_789')
+            assert.strictEqual(resolved!.crucialCookies.RPSTAuth, 'mock_RPSTAuth_value_999')
+            assert.strictEqual(resolved!.crucialCookies.WLSSC, 'mock_WLSSC_token_abc')
+
+            // 3. Verify injection into HttpClient
+            const client = new HttpClient()
+            SessionResolver.injectIntoHttpClient(client, resolved!)
+
+            assert.strictEqual(client.getCookie('_U'), 'mock_U_cookie_value_123')
+            assert.strictEqual(client.getCookie('KievRPSAuth'), 'mock_KievRPSAuth_value_456')
+            assert.strictEqual(client.getCookie('MUID'), 'mock_MUID_value_789')
+            assert.strictEqual(client.getCookie('RPSTAuth'), 'mock_RPSTAuth_value_999')
+            assert.strictEqual(client.getCookie('WLSSC'), 'mock_WLSSC_token_abc')
+
+            // Verify cookie header string contains crucial cookies
+            const headerStr = client.getCookieHeaderString()
+            assert.ok(headerStr.includes('_U=mock_U_cookie_value_123'))
+            assert.ok(headerStr.includes('KievRPSAuth=mock_KievRPSAuth_value_456'))
+            assert.ok(headerStr.includes('MUID=mock_MUID_value_789'))
+            assert.ok(headerStr.includes('RPSTAuth=mock_RPSTAuth_value_999'))
+
+            client.dispose()
+            console.log('  ✅ Test 15 Passed: Session Interoperability Engine (SessionResolver & Crucial Cookies) verified')
+        } finally {
+            fs.rmSync(tempDir, { recursive: true, force: true })
+        }
+    }
+
+    // =========================================================================
+    // TEST 16: AuthService Integration with SessionResolver & DAPI Header Hygiene
+    // =========================================================================
+    {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lite_auth_interop_'))
+        try {
+            const email = 'authtest@outlook.com'
+            const emailHash = crypto.createHash('sha256').update(email.toLowerCase().trim()).digest('hex')
+            const storageKey = crypto.createHash('sha256').update(emailHash).digest('hex').slice(0, 32)
+            const sessionPath = path.join(tempDir, `${storageKey}.mobile.storageState.json`)
+
+            const sessionContent = {
+                schemaVersion: 1,
+                accountId: emailHash,
+                device: 'mobile',
+                savedAt: Date.now(),
+                storageState: {
+                    cookies: [
+                        { name: 'WLSSC', value: 'auth_wlssc_token_123', domain: 'login.live.com' },
+                        { name: 'MSPAuth', value: 'auth_mspauth_token_456', domain: 'login.live.com' }
+                    ],
+                    origins: []
+                }
+            }
+            fs.writeFileSync(sessionPath, JSON.stringify(sessionContent))
+
+            const client = new HttpClient({ country: 'ID' })
+            const authService = new AuthService(client, email)
+
+            const loaded = authService.loadSessionCookies(sessionPath)
+            assert.strictEqual(loaded, true, 'AuthService must load session from modern envelope path')
+            assert.strictEqual(client.getCookie('WLSSC'), 'auth_wlssc_token_123')
+            assert.strictEqual(client.getCookie('MSPAuth'), 'auth_mspauth_token_456')
+
+            // Verify DAPI headers helper on HttpClient
+            const dapiHeaders = client.getDapiHeaders()
+            assert.strictEqual(dapiHeaders['X-Rewards-Country'], 'ID')
+            assert.strictEqual(dapiHeaders['X-Rewards-Language'], 'en')
+            assert.strictEqual(dapiHeaders['X-Rewards-ismobile'], 'true')
+
+            client.dispose()
+            console.log('  ✅ Test 16 Passed: AuthService Integration with SessionResolver & DAPI Header Hygiene verified')
+        } finally {
+            fs.rmSync(tempDir, { recursive: true, force: true })
+        }
+    }
+
+    console.log('\n🎉 ALL 16 PURE HTTP / DAPI ENGINE ACCEPTANCE TESTS PASSED SUCCESSFULLY!\n')
 }

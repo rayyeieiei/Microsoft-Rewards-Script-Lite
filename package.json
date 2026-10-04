@@ -1,6 +1,6 @@
 {
     "name": "microsoft-rewards-script-lite",
-    "version": "3.2.0",
+    "version": "3.2.1",
     "description": "Pure HTTP / DAPI engine for Microsoft Rewards tasks in TypeScript",
     "author": "Netsky",
     "license": "GPL-3.0-or-later",

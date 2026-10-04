@@ -11,15 +11,21 @@ export async function runCountdown(
     for (let s = seconds; s > 0; s--) {
         if (process.stdout && process.stdout.isTTY) {
             process.stdout.write(
-                `\r   └─ [Inter-Account Cool-Off] Melanjutkan akun berikutnya dalam ${s} detik...   `
+                `\r   └─ [Inter-Account Cooldown] Melanjutkan akun berikutnya dalam ${s} detik...   `
+            )
+        } else if (s === seconds || s % 10 === 0 || s <= 3) {
+            console.log(
+                `   └─ [Inter-Account Cooldown] Melanjutkan akun berikutnya dalam ${s} detik...`
             )
         }
         await sleep(1000)
     }
     if (process.stdout && process.stdout.isTTY) {
         process.stdout.write(
-            `\r   └─ [Inter-Account Cool-Off] Melanjutkan sekarang...                          \n`
+            `\r   └─ [Inter-Account Cooldown] Melanjutkan sekarang...                          \n`
         )
+    } else {
+        console.log(`   └─ [Inter-Account Cooldown] Melanjutkan sekarang...`)
     }
 }
 
@@ -66,14 +72,14 @@ async function main() {
         const result = await scope.run()
         results.push(result)
 
-        // Humanized cool-off delay antar-akun (35 s.d. 75 detik)
+        // Inter-account cooldown delay acak (25 s.d. 60 detik)
         if (accountIdx < accounts.length) {
-            const minCoolOff = 35
-            const maxCoolOff = 75
+            const minCoolOff = 25
+            const maxCoolOff = 60
             const coolOffSeconds =
                 Math.floor(Math.random() * (maxCoolOff - minCoolOff + 1)) + minCoolOff
             console.log(
-                `\n⏳ Menunggu ${coolOffSeconds} detik sebelum memproses akun berikutnya (Humanized Cool-Off)...`
+                `\n⏳ Menunggu ${coolOffSeconds} detik sebelum memproses akun berikutnya (Inter-Account Cooldown)...`
             )
             await runCountdown(coolOffSeconds)
         }

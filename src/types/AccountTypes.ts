@@ -34,6 +34,11 @@ export interface LiteRuntimeConfig {
     minReadDelayMs: number
     maxReadDelayMs: number
     maxArticles: number
+    warmupMode: boolean
+    warmupDay: 1 | 2 | 3
+    enableCheckIn: boolean
+    enableReadToEarn: boolean
+    searchQueriesLimit: number
 }
 
 export interface ActivitySummary {
@@ -41,6 +46,7 @@ export interface ActivitySummary {
     checkInClaimed: boolean
     readToEarnRemaining: number
     articlesRead: number
+    searchesCompleted?: number
 }
 
 export interface AccountExecutionResult {
@@ -52,6 +58,7 @@ export interface AccountExecutionResult {
     pointsEarned: number
     checkInClaimed: boolean
     articlesRead: number
+    searchesCompleted?: number
     errorMessage?: string
     durationMs: number
 }

@@ -2,8 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { URL, URLSearchParams } from 'url'
 import { HttpClient } from '../core/HttpClient'
-import { PlaywrightCookie } from '../types/AccountTypes'
+import { AccountData, PlaywrightCookie } from '../types/AccountTypes'
 import { OAuthTokenResponse } from '../types/DapiTypes'
+import { SessionResolver, ResolvedSession } from '../core/SessionResolver'
 
 export const OAUTH_CLIENT_ID = '0000000040170455'
 export const OAUTH_SCOPE = 'service::prod.rewardsplatform.microsoft.com::MBI_SSL'
@@ -13,13 +14,25 @@ export const OAUTH_TOKEN_URL = 'https://login.live.com/oauth20_token.srf'
 
 export class AuthService {
     private client: HttpClient
+    private account: AccountData | { email: string; id?: string; accountId?: string }
     private email: string
     private tokenData: OAuthTokenResponse | null = null
     private tokenExpiresAt: number = 0
+    private resolvedSession: ResolvedSession | null = null
 
-    constructor(client: HttpClient, email: string) {
+    constructor(client: HttpClient, accountOrEmail: AccountData | string) {
         this.client = client
-        this.email = email
+        if (typeof accountOrEmail === 'string') {
+            this.account = { email: accountOrEmail }
+            this.email = accountOrEmail
+        } else {
+            this.account = accountOrEmail
+            this.email = accountOrEmail.email
+        }
+    }
+
+    public getResolvedSession(): ResolvedSession | null {
+        return this.resolvedSession
     }
 
     /**
@@ -109,6 +122,31 @@ export class AuthService {
      * Injects cookies from the user's session file into the HttpClient instance.
      */
     public loadSessionCookies(sessionFilePath?: string): boolean {
+        // 1. If explicit sessionFilePath provided, resolve directly
+        if (sessionFilePath && fs.existsSync(sessionFilePath)) {
+            try {
+                const resolved = SessionResolver.resolveSessionFromFile(sessionFilePath, this.account)
+                SessionResolver.injectIntoHttpClient(this.client, resolved)
+                this.resolvedSession = resolved
+                return true
+            } catch {
+                // Fall back to legacy parser below
+            }
+        }
+
+        // 2. Try resolving via SessionResolver (checks modern envelopes, storage keys, and legacy dirs)
+        try {
+            const resolved = SessionResolver.resolveSession(this.account, 'mobile')
+            if (resolved) {
+                SessionResolver.injectIntoHttpClient(this.client, resolved)
+                this.resolvedSession = resolved
+                return true
+            }
+        } catch {
+            // Fall back to direct legacy path lookup
+        }
+
+        // 3. Fallback to legacy path lookup for compatibility
         const targetPath = sessionFilePath || AuthService.findSessionFilePath(this.email)
         if (!targetPath || !fs.existsSync(targetPath)) {
             return false
@@ -128,7 +166,10 @@ export class AuthService {
      * then trades the code for an access token.
      * Uses maxRedirects: 0 to capture Location header from the 302 response.
      */
-    public async authenticate(customCookieHeader?: string): Promise<string> {
+    public async authenticate(
+        customCookieHeader?: string,
+        sessionFilePath?: string
+    ): Promise<string> {
         if (this.tokenData && Date.now() < this.tokenExpiresAt - 60000) {
             return this.tokenData.access_token
         }
@@ -146,7 +187,7 @@ export class AuthService {
         if (customCookieHeader) {
             this.client.setCookieHeaderString(customCookieHeader)
         } else {
-            this.loadSessionCookies()
+            this.loadSessionCookies(sessionFilePath)
         }
 
         const authParams = new URLSearchParams({

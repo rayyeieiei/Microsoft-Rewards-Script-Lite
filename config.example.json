@@ -4,6 +4,11 @@
     "headless": false,
     "clusters": 1,
     "errorDiagnostics": false,
+    "warmupMode": false,
+    "warmupDay": 1,
+    "enableCheckIn": true,
+    "enableReadToEarn": true,
+    "searchQueriesLimit": 30,
     "workers": {
         "doDailySet": true,
         "doSpecialPromotions": true,

@@ -14,9 +14,11 @@ export interface DashboardSnapshot {
 
 export class DashboardService {
     private client: HttpClient
+    private country: string
 
-    constructor(client: HttpClient) {
+    constructor(client: HttpClient, country: string = 'ID') {
         this.client = client
+        this.country = country
     }
 
     /**
@@ -27,7 +29,7 @@ export class DashboardService {
             const response = await this.client.get<DapiProfileResponse>(DAPI_ME_URL, {
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
-                    'X-Rewards-Country': 'ID',
+                    'X-Rewards-Country': this.country,
                     'X-Rewards-Language': 'en',
                     'X-Rewards-ismobile': 'true'
                 }

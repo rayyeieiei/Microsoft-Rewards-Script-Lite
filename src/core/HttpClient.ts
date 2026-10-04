@@ -8,11 +8,11 @@ import { AccountProxyConfig } from '../types/AccountTypes'
 
 export const CANONICAL_EDGE_ANDROID_HEADERS: Record<string, string> = {
     'User-Agent':
-        'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 EdgA/128.0.2708.57',
+        'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36 EdgA/131.0.0.0',
     Accept: 'application/json, text/plain, */*',
     'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
     'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Sec-CH-UA': '"Chromium";v="128", "Not;A=Brand";v="24", "Microsoft Edge";v="128"',
+    'Sec-CH-UA': '"Chromium";v="131", "Not_A Brand";v="24", "Microsoft Edge";v="131"',
     'Sec-CH-UA-Mobile': '?1',
     'Sec-CH-UA-Platform': '"Android"',
     'Sec-Fetch-Site': 'same-site',
@@ -38,9 +38,12 @@ export class HttpClient {
     private responseInterceptorId: number | null = null
     private isDisposed = false
 
+    public readonly country: string
+
     constructor(options: HttpClientOptions = {}) {
         const timeout = Math.min(Math.max(options.timeoutMs ?? 7000, 1000), 7000)
         const country = options.country ?? 'ID'
+        this.country = country
 
         const hasProxy =
             options.proxy &&
@@ -70,7 +73,15 @@ export class HttpClient {
 
         // Clean any default axios/node headers that may leak library fingerprint
         if (this.client.defaults.headers) {
-            delete (this.client.defaults.headers as any).common?.['User-Agent']
+            const h = this.client.defaults.headers as any
+            if (h.common) {
+                delete h.common['User-Agent']
+                delete h.common['Accept']
+                delete h.common['Accept-Encoding']
+            }
+            if (h.delete) delete h.delete['Content-Type']
+            if (h.get) delete h.get['Content-Type']
+            if (h.head) delete h.head['Content-Type']
         }
 
         // Request interceptor: inject cookies from in-memory store
@@ -222,6 +233,14 @@ export class HttpClient {
         config?: AxiosRequestConfig
     ): Promise<AxiosResponse<T>> {
         return this.getAxios().post<T>(url, data, config)
+    }
+
+    public getDapiHeaders(): Record<string, string> {
+        return {
+            'X-Rewards-Country': this.country,
+            'X-Rewards-Language': 'en',
+            'X-Rewards-ismobile': 'true'
+        }
     }
 
     public dispose(): void {
